@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sium Duel FPS - Proyectiles Activos</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Inter', sans-serif;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #interfaz-fps {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #mira {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        #mira::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 2px;
+            height: 2px;
+            background: white;
+            transform: translate(-50%, -50%);
+        }
+
+        .con-puntero {
+            pointer-events: auto;
+        }
+
+        .texto-sium {
+            text-shadow: 0 0 10px rgba(0, 0, 0, 1);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="interfaz-fps">
+        <div id="mira"></div>
+
+        <!-- HUD Superior Sium -->
+        <div class="flex justify-between p-6">
+            <div
+                class="bg-blue-900/40 backdrop-blur-md p-4 rounded-lg border-l-4 border-blue-500 text-white shadow-2xl">
+                <h2 class="font-black text-xl italic tracking-tighter texto-sium">FPS SIUM</h2>
+                <div id="rol-jugador" class="text-yellow-400 font-bold uppercase text-sm">ESPERANDO...</div>
+            </div>
+
+            <div class="text-center">
+                <div class="bg-black/60 px-8 py-2 rounded-full border-2 border-white/20">
+                    <div id="reloj" class="text-4xl font-black text-white italic tracking-widest">30</div>
+                    <div class="text-[8px] text-zinc-400 uppercase font-bold">Tiempo de Carga</div>
+                </div>
+            </div>
+
+            <div class="bg-red-900/40 backdrop-blur-md p-4 rounded-lg border-r-4 border-red-500 text-white text-right">
+                <h2 class="font-black text-xl italic tracking-tighter texto-sium">BOT RIVAL</h2>
+                <div id="distancia-bot" class="text-zinc-300 font-mono text-xs">CALCULANDO...</div>
+            </div>
+        </div>
+
+        <!-- Pantalla de Inicio -->
+        <div id="overlay" class="absolute inset-0 flex items-center justify-center bg-black/90 con-puntero">
+            <div class="text-center p-12 max-w-lg">
+                <h1 class="text-7xl font-black text-white mb-4 italic tracking-tighter">SIUM DUEL</h1>
+                <p class="text-zinc-400 mb-8 leading-relaxed">
+                    ¡Proyectiles activados!<br>
+                    <span class="text-white font-mono text-sm">W: Adelante | S: Atrás | A: Derecha | D:
+                        Izquierda</span><br>
+                    Haz clic para empezar.
+                </p>
+                <button onclick="iniciarJuego()"
+                    class="bg-white hover:bg-yellow-400 text-black font-black py-4 px-12 rounded-full text-2xl transition-all shadow-white/10 shadow-lg">
+                    ¡SOLTAR BALAS!
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuración Sium Engine ---
+        let escena, camara, renderizador, reloj;
+        let laberinto = [];
+        const DIMENSION = 17;
+        const ESCALA = 6;
+        let botObj, grupoArma;
+        let cazadorId = 1;
+        let tiempo = 30;
+        let activo = false;
+        let teclas = {};
+        let linterna;
+
+        // Lista de proyectiles activos Sium
+        let proyectilesSium = [];
+
+        // Variables FPS
+        let yaw = 0, pitch = 0;
+        const sensiblidad = 0.002;
+        let balanceoArma = 0;
+
+        function init() {
+            escena = new THREE.Scene();
+            escena.background = new THREE.Color(0x010101);
+            escena.fog = new THREE.Fog(0x000000, 5, 45);
+
+            camara = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+            renderizador = new THREE.WebGLRenderer({ antialias: true });
+            renderizador.setSize(window.innerWidth, window.innerHeight);
+            renderizador.shadowMap.enabled = true;
+            document.body.appendChild(renderizador.domElement);
+
+            reloj = new THREE.Clock();
+
+            // Luces ambientales
+            const ambiente = new THREE.AmbientLight(0xffffff, 0.15);
+            escena.add(ambiente);
+
+            linterna = new THREE.SpotLight(0xffffff, 1.8, 35, Math.PI / 5, 0.4, 1);
+            linterna.castShadow = true;
+            escena.add(linterna);
+            escena.add(linterna.target);
+
+            generarLaberinto();
+            spawnEntidades();
+            crearArma();
+
+            // Eventos Sium
+            document.addEventListener('keydown', e => teclas[e.code] = true);
+            document.addEventListener('keyup', e => teclas[e.code] = false);
+            document.addEventListener('mousemove', manejarMouse);
+            document.addEventListener('mousedown', () => { if (activo) disparar(1); });
+            window.addEventListener('resize', onResize);
+        }
+
+        function crearArma() {
+            grupoArma = new THREE.Group();
+
+            // El Brazo Sium
+            const geoBrazo = new THREE.CylinderGeometry(0.15, 0.2, 1, 12);
+            const matBrazo = new THREE.MeshStandardMaterial({ color: 0xe0ac69 });
+            const brazo = new THREE.Mesh(geoBrazo, matBrazo);
+            brazo.rotation.x = Math.PI / 2;
+            brazo.position.set(0.4, -0.4, -0.6);
+            grupoArma.add(brazo);
+
+            // El Cuerpo del Arma
+            const geoCuerpo = new THREE.BoxGeometry(0.2, 0.3, 0.8);
+            const matArma = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.1 });
+            const cuerpo = new THREE.Mesh(geoCuerpo, matArma);
+            cuerpo.position.set(0.4, -0.25, -1.0);
+            grupoArma.add(cuerpo);
+
+            // El Cañón
+            const geoCanon = new THREE.CylinderGeometry(0.06, 0.06, 0.5, 12);
+            const canon = new THREE.Mesh(geoCanon, matArma);
+            canon.rotation.x = Math.PI / 2;
+            canon.position.set(0.4, -0.2, -1.4);
+            grupoArma.add(canon);
+
+            escena.add(grupoArma);
+        }
+
+        function generarLaberinto() {
+            for (let y = 0; y < DIMENSION; y++) {
+                laberinto[y] = [];
+                for (let x = 0; x < DIMENSION; x++) laberinto[y][x] = 1;
+            }
+
+            function excavar(x, y) {
+                laberinto[y][x] = 0;
+                const direcciones = [[0, 2], [0, -2], [2, 0], [-2, 0]].sort(() => Math.random() - 0.5);
+                for (let [dx, dy] of direcciones) {
+                    let nx = x + dx, ny = y + dy;
+                    if (nx > 0 && nx < DIMENSION - 1 && ny > 0 && ny < DIMENSION - 1 && laberinto[ny][nx] === 1) {
+                        laberinto[y + dy / 2][x + dx / 2] = 0;
+                        excavar(nx, ny);
+                    }
+                }
+            }
+            excavar(1, 1);
+
+            const geoPared = new THREE.BoxGeometry(ESCALA, 7, ESCALA);
+            const matPared = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 1.0 });
+            const offset = (DIMENSION * ESCALA) / 2;
+
+            for (let y = 0; y < DIMENSION; y++) {
+                for (let x = 0; x < DIMENSION; x++) {
+                    if (laberinto[y][x] === 1) {
+                        const muro = new THREE.Mesh(geoPared, matPared);
+                        muro.position.set(x * ESCALA - offset, 3.5, y * ESCALA - offset);
+                        muro.castShadow = true;
+                        muro.receiveShadow = true;
+                        escena.add(muro);
+                    }
+                }
+            }
+
+            const geoSuelo = new THREE.PlaneGeometry(DIMENSION * ESCALA, DIMENSION * ESCALA);
+            const matSuelo = new THREE.MeshStandardMaterial({ color: 0x0a0a0a });
+            const suelo = new THREE.Mesh(geoSuelo, matSuelo);
+            suelo.rotation.x = -Math.PI / 2;
+            suelo.receiveShadow = true;
+            escena.add(suelo);
+        }
+
+        function spawnEntidades() {
+            const offset = (DIMENSION * ESCALA) / 2;
+            camara.position.set(1 * ESCALA - offset, 2, 1 * ESCALA - offset);
+
+            const geoB = new THREE.BoxGeometry(1.5, 3.5, 1.5);
+            const matB = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0x220000 });
+            botObj = new THREE.Mesh(geoB, matB);
+            botObj.position.set((DIMENSION - 2) * ESCALA - offset, 1.75, (DIMENSION - 2) * ESCALA - offset);
+
+            const luzB = new THREE.PointLight(0xff0000, 2, 12);
+            botObj.add(luzB);
+            escena.add(botObj);
+        }
+
+        function manejarMouse(e) {
+            if (!activo || document.pointerLockElement !== renderizador.domElement) return;
+            yaw -= e.movementX * sensiblidad;
+            pitch -= e.movementY * sensiblidad;
+            pitch = Math.max(-Math.PI / 2.4, Math.min(Math.PI / 2.4, pitch));
+            camara.rotation.set(pitch, yaw, 0, 'YXZ');
+        }
+
+        function iniciarJuego() {
+            renderizador.domElement.requestPointerLock();
+            activo = true;
+            document.getElementById('overlay').classList.add('hidden');
+            reloj.start();
+            actualizarUI();
+        }
+
+        function colision(nx, nz) {
+            const offset = (DIMENSION * ESCALA) / 2;
+            const gx = Math.round((nx + offset) / ESCALA);
+            const gz = Math.round((nz + offset) / ESCALA);
+            return laberinto[gz]?.[gx] === 1;
+        }
+
+        function disparar(quien) {
+            if (!activo || cazadorId !== quien) return;
+
+            // Retroceso visual
+            if (quien === 1) {
+                grupoArma.position.z += 0.25;
+                setTimeout(() => { if (grupoArma) grupoArma.position.z -= 0.25; }, 80);
+            }
+
+            // Crear Proyectil Sium
+            const geoBala = new THREE.SphereGeometry(0.12, 8, 8);
+            const matBala = new THREE.MeshBasicMaterial({ color: quien === 1 ? 0xffff00 : 0xff0000 });
+            const bala = new THREE.Mesh(geoBala, matBala);
+
+            // Punto de salida
+            const dir = new THREE.Vector3();
+            if (quien === 1) {
+                camara.getWorldDirection(dir);
+                bala.position.copy(camara.position).addScaledVector(dir, 1);
+            } else {
+                dir.subVectors(camara.position, botObj.position).normalize();
+                bala.position.copy(botObj.position).addScaledVector(dir, 1.5);
+            }
+
+            // Luz de la bala
+            const luzBala = new THREE.PointLight(matBala.color, 1.5, 6);
+            bala.add(luzBala);
+
+            // Flash de disparo
+            const flash = new THREE.PointLight(0xffff00, 3, 10);
+            flash.position.copy(bala.position);
+            escena.add(flash);
+            setTimeout(() => escena.remove(flash), 50);
+
+            proyectilesSium.push({
+                mesh: bala,
+                dir: dir,
+                owner: quien,
+                dist: 0
+            });
+            escena.add(bala);
+        }
+
+        function actualizarUI() {
+            const rol = document.getElementById('rol-jugador');
+            if (cazadorId === 1) {
+                rol.innerText = "🎯 ERES EL CAZADOR";
+                rol.className = "text-yellow-400 font-black animate-pulse";
+            } else {
+                rol.innerText = "🏃 ¡ESCAPA DEL BOT!";
+                rol.className = "text-red-500 font-black";
+            }
+        }
+
+        function finalizar(res) {
+            activo = false;
+            document.exitPointerLock();
+            document.getElementById('overlay').classList.remove('hidden');
+            document.querySelector('h1').innerText = res;
+
+            // Limpiar balas al terminar
+            proyectilesSium.forEach(p => escena.remove(p.mesh));
+            proyectilesSium = [];
+        }
+
+        function onResize() {
+            camara.aspect = window.innerWidth / window.innerHeight;
+            camara.updateProjectionMatrix();
+            renderizador.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function bucle() {
+            requestAnimationFrame(bucle);
+            const dt = reloj.getDelta();
+
+            if (activo) {
+                const vel = 7 * dt;
+                const forward = new THREE.Vector3();
+                camara.getWorldDirection(forward);
+                forward.y = 0; forward.normalize();
+
+                const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).negate();
+
+                let nextPos = camara.position.clone();
+                let moviendo = false;
+
+                // Controles: A=Derecha, D=Izquierda (Solicitados por usuario)
+                if (teclas['KeyW']) { nextPos.addScaledVector(forward, vel); moviendo = true; }
+                if (teclas['KeyS']) { nextPos.addScaledVector(forward, -vel); moviendo = true; }
+                if (teclas['KeyA']) { nextPos.addScaledVector(right, vel); moviendo = true; }
+                if (teclas['KeyD']) { nextPos.addScaledVector(right, -vel); moviendo = true; }
+
+                if (!colision(nextPos.x, nextPos.z)) camara.position.copy(nextPos);
+
+                // Actualizar Brazo Sium
+                grupoArma.position.copy(camara.position);
+                grupoArma.rotation.copy(camara.rotation);
+
+                if (moviendo) {
+                    balanceoArma += dt * 12;
+                    grupoArma.position.y += Math.sin(balanceoArma) * 0.02;
+                    grupoArma.position.x += Math.cos(balanceoArma * 0.6) * 0.01;
+                }
+
+                // Actualizar Linterna Sium
+                linterna.position.copy(camara.position);
+                const targetPos = new THREE.Vector3();
+                camara.getWorldDirection(targetPos);
+                linterna.target.position.copy(camara.position).add(targetPos);
+
+                // --- LÓGICA DE PROYECTILES SIUM ---
+                const velocidadBala = 45 * dt;
+                for (let i = proyectilesSium.length - 1; i >= 0; i--) {
+                    const p = proyectilesSium[i];
+                    p.mesh.position.addScaledVector(p.dir, velocidadBala);
+                    p.dist += velocidadBala;
+
+                    // Colisión con paredes
+                    if (colision(p.mesh.position.x, p.mesh.position.z)) {
+                        escena.remove(p.mesh);
+                        proyectilesSium.splice(i, 1);
+                        continue;
+                    }
+
+                    // Colisión con personajes
+                    if (p.owner === 1) { // Bala del humano
+                        if (p.mesh.position.distanceTo(botObj.position) < 1.5) {
+                            finalizar("¡HAS GANADO!");
+                            break;
+                        }
+                    } else { // Bala del bot
+                        if (p.mesh.position.distanceTo(camara.position) < 1.0) {
+                            finalizar("BOT TE ELIMINÓ");
+                            break;
+                        }
+                    }
+
+                    // Rango máximo
+                    if (p.dist > 60) {
+                        escena.remove(p.mesh);
+                        proyectilesSium.splice(i, 1);
+                    }
+                }
+
+                // Bot IA
+                const distBot = botObj.position.distanceTo(camara.position);
+                document.getElementById('distancia-bot').innerText = `${distBot.toFixed(1)}m`;
+
+                const dirBot = new THREE.Vector3();
+                if (cazadorId === 2) {
+                    dirBot.subVectors(camara.position, botObj.position).normalize();
+                    if (distBot < 1.8) finalizar("EL BOT TE ATRAPÓ");
+                    if (distBot < 20 && Math.random() < 0.02) disparar(2);
+                } else {
+                    dirBot.subVectors(botObj.position, camara.position).normalize();
+                }
+
+                const nX = botObj.position.x + dirBot.x * (4.5 * dt);
+                const nZ = botObj.position.z + dirBot.z * (4.5 * dt);
+                if (!colision(nX, nZ)) { botObj.position.x = nX; botObj.position.z = nZ; }
+
+                // Temporizador de roles
+                tiempo -= dt;
+                if (tiempo <= 0) {
+                    tiempo = 30;
+                    cazadorId = cazadorId === 1 ? 2 : 1;
+                    actualizarUI();
+                }
+                document.getElementById('reloj').innerText = Math.ceil(tiempo);
+            }
+
+            renderizador.render(escena, camara);
+        }
+
+        init();
+        bucle();
+    </script>
+
+</body>
+
+</html>

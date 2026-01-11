@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sium Duel FPS - Proyectiles Activos</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fflate@0.7.4/umd/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="css/estilos.css">
+</head>
+
+<body>
+
+    <div id="interfaz-fps">
+        <div id="mira"></div>
+
+        <!-- HUD Superior Sium -->
+        <div class="flex justify-between p-6">
+            <div
+                class="bg-blue-900/40 backdrop-blur-md p-4 rounded-lg border-l-4 border-blue-500 text-white shadow-2xl">
+                <h2 class="font-black text-xl italic tracking-tighter texto-sium">FPS SIUM</h2>
+                <div id="rol-jugador" class="text-yellow-400 font-bold uppercase text-sm">ESPERANDO...</div>
+            </div>
+
+            <div class="text-center">
+                <div class="bg-black/60 px-8 py-2 rounded-full border-2 border-white/20">
+                    <div id="reloj" class="text-4xl font-black text-white italic tracking-widest">30</div>
+                    <div class="text-[8px] text-zinc-400 uppercase font-bold">Tiempo de Carga</div>
+                </div>
+            </div>
+
+            <div class="bg-red-900/40 backdrop-blur-md p-4 rounded-lg border-r-4 border-red-500 text-white text-right">
+                <h2 class="font-black text-xl italic tracking-tighter texto-sium">BOT RIVAL</h2>
+                <div id="distancia-bot" class="text-zinc-300 font-mono text-xs">CALCULANDO...</div>
+            </div>
+        </div>
+
+        <!-- Pantalla de Inicio -->
+        <div id="overlay" class="absolute inset-0 flex items-center justify-center bg-black/90 con-puntero">
+            <div class="text-center p-12 max-w-lg">
+                <h1 class="text-7xl font-black text-white mb-4 italic tracking-tighter">SIUM DUEL</h1>
+                <p class="text-zinc-400 mb-8 leading-relaxed">
+                    ¡Proyectiles activados!<br>
+                    <span class="text-white font-mono text-sm">W: Adelante | S: Atrás | A: Derecha | D:
+                        Izquierda</span><br>
+                    Haz clic para empezar.
+                </p>
+                <button onclick="iniciarJuego()"
+                    class="bg-white hover:bg-yellow-400 text-black font-black py-4 px-12 rounded-full text-2xl transition-all shadow-white/10 shadow-lg">
+                    ¡SOLTAR BALAS!
+                </button>
+            </div>
+        </div>
+
+        <!-- Menú de Pausa -->
+        <div id="menu-pausa"
+            class="hidden absolute inset-0 flex items-center justify-center bg-black/80 z-50 con-puntero">
+            <div
+                class="text-center p-8 border-4 border-blue-500 rounded-xl bg-gray-900/90 shadow-blue-500/20 shadow-xl">
+                <h2 class="text-5xl font-black text-white mb-8 italic tracking-tighter">PAUSA</h2>
+                <button onclick="reanudarJuego()"
+                    class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-10 rounded-full text-xl transition-all shadow-lg">
+                    REANUDAR
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts del Juego -->
+    <!-- Orden de carga importante para dependencias -->
+    <script src="js/config.js"></script>
+    <script src="js/laberinto.js"></script>
+    <script src="js/pathfinding.js"></script>
+    <script src="js/bot-tactico.js"></script>
+    <script src="js/entidades.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/main.js"></script>
+
+</body>
+
+</html>
