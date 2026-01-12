@@ -39,6 +39,17 @@ var personajesSium = {
             agachado: 'modelos/personajes/cill_agachada.fbx',
             disparo: 'modelos/personajes/cill_disparando_pistola_parada.fbx'
         }
+    },
+    'rufy': {
+        id: 'rufy',
+        nombre: 'RUFY',
+        desc: 'Una coneja mitad humana muy ágil.',
+        modelos: {
+            caminar: 'modelos/personajes/rufy_caminar.fbx',
+            parado: 'modelos/personajes/rufy_parada.fbx',
+            agachado: 'modelos/personajes/rufy_agachada.fbx',
+            disparo: 'modelos/personajes/rufy_parada_disparando_pistola.fbx'
+        }
     }
 };
 

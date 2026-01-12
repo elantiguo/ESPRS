@@ -62,15 +62,18 @@ function seleccionarPersonaje(id) {
     // Reset borders
     const btnAgente = document.getElementById('btn-p-agente');
     const btnCill = document.getElementById('btn-p-cill');
+    const btnRufy = document.getElementById('btn-p-rufy');
 
     if (btnAgente) btnAgente.classList.remove('border-blue-500', 'bg-blue-500/10');
     if (btnCill) btnCill.classList.remove('border-yellow-500', 'bg-yellow-500/10');
+    if (btnRufy) btnRufy.classList.remove('border-pink-500', 'bg-pink-500/10');
 
     // Set active
     const btn = document.getElementById('btn-p-' + id);
     if (btn) {
         if (id === 'agente') btn.classList.add('border-blue-500', 'bg-blue-500/10');
         if (id === 'cill') btn.classList.add('border-yellow-500', 'bg-yellow-500/10');
+        if (id === 'rufy') btn.classList.add('border-pink-500', 'bg-pink-500/10');
     }
 
     console.log("Personaje seleccionado:", p.nombre);
