@@ -78,7 +78,34 @@ class BotTactico {
         this.historialPosJugador = [];
         this.maxHistorial = 10;
 
+        // ========================================
+        // THROTTLE DE DECISIONES (Optimización)
+        // ========================================
+        this.frameCounter = 0;
+        this.visionCheckInterval = 3;    // Verificar visión cada 3 frames
+        this.cachedVision = false;       // Resultado cacheado de línea de visión
+        this.agachadoCheckInterval = 5;  // Verificar agachado cada 5 frames
+        this.cachedDebeAgacharse = false;
         // Posición anterior para detectar si está quieto
+        this.posicionAnterior = null;
+    }
+
+    reset() {
+        this.estadoActual = this.ESTADOS.PATRULLAR;
+        this.ultimaPosJugador = null;
+        this.tiempoUltimaVista = 0;
+        this.cooldownDisparo = 0;
+        this.estaAgachado = false;
+        this.waypointGenerado = false; // Forzar regeneración si se desea
+        this.puntosVisitados = [];
+        this.tiempoBuscando = 0;
+        this.puntoEscondite = null;
+        this.tiempoEscondido = 0;
+        this.direccionActual = { x: 0, z: 0 };
+        this.tiempoQuieto = 0;
+        this.esquivando = false;
+        this.cooldownEsquive = 0;
+        this.historialPosJugador = [];
         this.posicionAnterior = null;
     }
 
@@ -108,7 +135,6 @@ class BotTactico {
         // Mezclar waypoints para orden aleatorio
         this.waypoints.sort(() => Math.random() - 0.5);
         this.waypointGenerado = true;
-        console.log(`Bot: ${this.waypoints.length} waypoints de patrulla generados`);
     }
 
     obtenerSiguienteWaypoint() {
@@ -734,5 +760,4 @@ var botTactico = null;
 
 function inicializarBotTactico() {
     botTactico = new BotTactico();
-    console.log('Bot Táctico IA v2.0 inicializado con movimiento natural');
 }

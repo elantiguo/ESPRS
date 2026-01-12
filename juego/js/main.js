@@ -12,6 +12,12 @@ function init() {
 
     reloj = new THREE.Clock();
 
+    // Inicializar pool de vectores reutilizables
+    initVectorPool();
+
+    // Inicializar sistema de caché avanzado
+    inicializarGameCache();
+
     // Luces ambientales
     const ambiente = new THREE.AmbientLight(0xffffff, 0.15);
     escena.add(ambiente);
@@ -26,6 +32,7 @@ function init() {
     inicializarBotTactico(); // Inicializar IA táctica
     spawnEntidades();
     crearArma();
+    inicializarProjectilePool(); // Pool de proyectiles para optimización
 
     // Eventos Sium
     // Eventos Sium
@@ -37,7 +44,6 @@ function init() {
             e.preventDefault(); // Evitar que Alt abra menú del navegador
             terceraPersona = !terceraPersona;
             yaw += Math.PI;
-            console.log('Modo cámara:', terceraPersona ? 'Tercera Persona' : 'Primera Persona');
 
             // Mostrar/ocultar modelo del jugador (el arma se maneja en el bucle)
             if (jugadorObj) {
@@ -64,11 +70,11 @@ function init() {
     // Detección de Pausa (Pointer Lock)
     document.addEventListener('pointerlockchange', () => {
         if (document.pointerLockElement === renderizador.domElement) {
-            // Juego Reanudado
-            if (!juegoTerminado) {
+            // Solo activar juego si no estamos en cinematica ni ha terminado
+            if (!juegoTerminado && !enCinematica) {
                 activo = true;
                 ocultarPausa();
-                reloj.start(); // Opcional: reiniciar delta correcto
+                reloj.start();
             }
         } else {
             // Juego Pausado o Terminado
@@ -85,21 +91,137 @@ function init() {
 }
 
 function manejarMouse(e) {
-    if (!activo || document.pointerLockElement !== renderizador.domElement) return;
+    // Permitir mover la cámara (yaw/pitch) si estamos jugando O en cinemática (aunque se ignore el renderizado)
+    if ((!activo && !enCinematica) || document.pointerLockElement !== renderizador.domElement) return;
     yaw -= e.movementX * sensiblidad;
     pitch -= e.movementY * sensiblidad;
     pitch = Math.max(-Math.PI / 2.4, Math.min(Math.PI / 2.4, pitch));
-    camara.rotation.set(pitch, yaw, 0, 'YXZ');
+
+    // Solo aplicar rotación directa a la cámara si NO estamos en cinemática
+    if (!enCinematica) {
+        camara.rotation.set(pitch, yaw, 0, 'YXZ');
+    }
 }
 
 function iniciarJuego() {
-    renderizador.domElement.requestPointerLock();
-    juegoTerminado = false;
-    activo = true;
+    // Si el personaje seleccionado es diferente al cargado, actualizamos modelos
+    if (idPersonajeSeleccionado !== idPersonajeCargado) {
+        actualizarModelosPersonajes();
+    }
+
+    // Si el juego ha terminado, reiniciamos la simulación sin recargar página
+    if (juegoTerminado) {
+        reiniciarSimulacion();
+    }
+
+    // Ocultar menús
     document.getElementById('overlay').classList.add('hidden');
     ocultarPausa();
+
+    // Bloquear puntero INMEDIATAMENTE (requiere gesto del usuario, este botón lo es)
+    renderizador.domElement.requestPointerLock();
+
+    // Iniciar fase cinemática
+    iniciarCinematica();
+}
+
+function iniciarCinematica() {
+    console.log("Fase 1: Identificación de Operativos...");
+    enCinematica = true;
+    faseCinematica = 0; // Fase de identificación (10s)
+    activo = false;
+    tiempoCinematica = 10;
+
+    // Configurar UI
+    const pantallaCine = document.getElementById('pantalla-cinematica');
+    if (pantallaCine) pantallaCine.classList.remove('hidden');
+
+    // Hacer visibles los personajes para la cámara aérea
+    if (jugadorObj) jugadorObj.visible = true;
+    if (botObj) botObj.visible = true;
+
+    // Reiniciar reloj para la cinemática
+    reloj.start();
+}
+
+function iniciarRecorridoMapa() {
+    console.log("Fase 2: Escaneo de Perímetro...");
+    faseCinematica = 1; // Fase de movimiento/animación
+    tiempoCinematica = 6; // 6 segundos de recorrido
+
+    // Actualizar texto UI si es necesario
+    const cineP = document.getElementById('cine-nombre-p');
+    if (cineP) cineP.innerText = "EXPLORANDO CAMPO DE BATALLA...";
+}
+
+function finalizarCinematica() {
+    console.log("Infiltración Completada. ¡A LUCHAR!");
+    enCinematica = false;
+    activo = true;
+
+    const pantallaCine = document.getElementById('pantalla-cinematica');
+    if (pantallaCine) pantallaCine.classList.add('hidden');
+
+    if (jugadorObj) jugadorObj.visible = terceraPersona;
+
+    // Si por alguna razón no está bloqueado (ej: el usuario pulsó algo), intentar bloquear
+    if (document.pointerLockElement !== renderizador.domElement) {
+        renderizador.domElement.requestPointerLock();
+    }
+
     reloj.start();
     actualizarUI();
+}
+
+function reiniciarSimulacion() {
+    console.log("Reiniciando simulación Sium...");
+
+    // 1. Resetear estados de juego
+    juegoTerminado = false;
+    activo = false;
+    tiempo = 30;
+    cazadorId = 1;
+
+    // 2. Resetear posiciones (usar lógica de spawnEntidades)
+    const offset = (DIMENSION * ESCALA) / 2;
+    const posInicialX = 1 * ESCALA - offset;
+    const posInicialZ = 1 * ESCALA - offset;
+
+    posicionJugador.x = posInicialX;
+    posicionJugador.y = 2;
+    posicionJugador.z = posInicialZ;
+
+    camara.position.set(posInicialX, 2, posInicialZ);
+    yaw = 0;
+    pitch = 0;
+
+    if (jugadorObj) {
+        jugadorObj.position.set(posInicialX, 0, posInicialZ);
+        if (jugadorMixer) jugadorMixer.stopAllAction();
+        cambiarAnimacionJugador(false, false);
+    }
+
+    if (botObj) {
+        botObj.position.set((DIMENSION - 2) * ESCALA - offset, 0, (DIMENSION - 2) * ESCALA - offset);
+        if (botMixer) botMixer.stopAllAction();
+        cambiarAnimacionBot(false, false);
+        // Resetear IA
+        if (botTactico) botTactico.reset();
+    }
+
+    // 3. Limpiar proyectiles
+    if (projectilePool) projectilePool.clear();
+
+    // 4. Actualizar UI
+    actualizarUI();
+    document.getElementById('reloj').innerText = tiempo;
+    const titulo = document.getElementById('menu-titulo');
+    if (titulo) {
+        titulo.innerText = "ESPRS: EVASIÓN TÁCTICA";
+        titulo.classList.remove('text-red-500');
+    }
+    const btnTexto = document.querySelector('button[onclick="iniciarJuego()"] span');
+    if (btnTexto) btnTexto.innerText = "INICIAR DUELO";
 }
 
 window.reanudarJuego = function () {
@@ -127,6 +249,67 @@ function bucle(tiempo) {
     ultimoTiempo = tiempo;
 
     const dt = reloj.getDelta();
+
+    // ========================================
+    // LÓGICA DE CINEMÁTICA (PRE-JUEGO)
+    // ========================================
+    if (enCinematica) {
+        tiempoCinematica -= dt;
+
+        if (faseCinematica === 0) {
+            // FASE 0: CUENTA ATRÁS (Cámara Estática / Identificación)
+            const seg = Math.max(0, Math.ceil(tiempoCinematica));
+            document.getElementById('contador-cinematica').innerText = seg;
+
+            if (tiempoCinematica > 5) {
+                // Primeros 5 segundos: Identificar Jugador
+                const target = posicionJugador;
+                // Posición fija de cámara para ver al jugador de frente
+                camara.position.set(target.x + 4, 3, target.z + 4);
+                camara.lookAt(target.x, 1.5, target.z);
+
+                const pNombre = personajesSium[idPersonajeSeleccionado].nombre;
+                document.getElementById('cine-nombre-p').innerText = `IDENTIFICANDO: ${pNombre}`;
+                document.getElementById('cine-nombre-b').innerText = `ESTADO: EN ESPERA`;
+            } else {
+                // Siguientes 5 segundos: Identificar Bot
+                const target = botObj.position;
+                // Posición fija de cámara para ver al bot
+                camara.position.set(target.x - 4, 3, target.z - 4);
+                camara.lookAt(target.x, 1.5, target.z);
+
+                const bId = idPersonajeSeleccionado === 'agente' ? 'cill' : 'agente';
+                const bNombre = personajesSium[bId].nombre;
+                document.getElementById('cine-nombre-p').innerText = `OBJETIVO LOCALIZADO`;
+                document.getElementById('cine-nombre-b').innerText = `AMENAZA: ${bNombre}`;
+            }
+
+            if (tiempoCinematica <= 0) {
+                iniciarRecorridoMapa();
+            }
+        } else if (faseCinematica === 1) {
+            // FASE 1: ANIMACIÓN / RECORRIDO MAPA (Inicia después del contador)
+            document.getElementById('contador-cinematica').innerText = "LIVE";
+
+            const progreso = 1 - (tiempoCinematica / 6); // De 0 a 1 en 6 segundos
+            const tiempoAnim = (1 - progreso) * 2;
+
+            // Recorrido dinámico por el cielo del laberinto
+            const centroX = 0;
+            const centroZ = 0;
+            const radio = 30 - progreso * 15;
+
+            camara.position.x = centroX + Math.cos(tiempoAnim) * radio;
+            camara.position.z = centroZ + Math.sin(tiempoAnim) * radio;
+            camara.position.y = 8 + progreso * 20;
+
+            camara.lookAt(centroX, 2, centroZ);
+
+            if (tiempoCinematica <= 0) {
+                finalizarCinematica();
+            }
+        }
+    }
 
     // Actualizar animaciones del bot SIEMPRE (incluso en pausa para que se vea)
     if (botMixer) {
@@ -157,41 +340,33 @@ function bucle(tiempo) {
         // Calcular dirección de movimiento basándose en yaw
         // En primera persona: forward es hacia donde mira la cámara
         // En tercera persona: forward es alejándose de la cámara (cámara está detrás)
-        let forward;
         if (terceraPersona) {
             // En tercera persona, la cámara está detrás, así que forward es hacia donde mira el jugador
-            forward = new THREE.Vector3(
-                Math.sin(yaw),
-                0,
-                Math.cos(yaw)
-            );
+            _vecForward.set(Math.sin(yaw), 0, Math.cos(yaw));
         } else {
             // En primera persona, forward es hacia donde mira la cámara
-            forward = new THREE.Vector3(
-                -Math.sin(yaw),
-                0,
-                -Math.cos(yaw)
-            );
+            _vecForward.set(-Math.sin(yaw), 0, -Math.cos(yaw));
         }
-        forward.normalize();
+        _vecForward.normalize();
 
-        const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).negate();
+        _vecRight.set(0, 1, 0);
+        _vecRight.crossVectors(_vecForward, _vecRight).negate();
 
         // Usar posicionJugador como base, no camara.position
-        let nextPos = new THREE.Vector3(posicionJugador.x, posicionJugador.y, posicionJugador.z);
+        _vecNextPos.set(posicionJugador.x, posicionJugador.y, posicionJugador.z);
         let moviendo = false;
 
         // Controles: A=Derecha, D=Izquierda (Solicitados por usuario)
-        if (teclas['KeyW']) { nextPos.addScaledVector(forward, vel); moviendo = true; }
-        if (teclas['KeyS']) { nextPos.addScaledVector(forward, -vel); moviendo = true; }
-        if (teclas['KeyA']) { nextPos.addScaledVector(right, vel); moviendo = true; }
-        if (teclas['KeyD']) { nextPos.addScaledVector(right, -vel); moviendo = true; }
+        if (teclas['KeyW']) { _vecNextPos.addScaledVector(_vecForward, vel); moviendo = true; }
+        if (teclas['KeyS']) { _vecNextPos.addScaledVector(_vecForward, -vel); moviendo = true; }
+        if (teclas['KeyA']) { _vecNextPos.addScaledVector(_vecRight, vel); moviendo = true; }
+        if (teclas['KeyD']) { _vecNextPos.addScaledVector(_vecRight, -vel); moviendo = true; }
 
         // Pasamos estado 'agachado' a la colisión
-        if (!colision(nextPos.x, nextPos.z, agachado)) {
+        if (!colision(_vecNextPos.x, _vecNextPos.z, agachado)) {
             // Guardar posición del jugador
-            posicionJugador.x = nextPos.x;
-            posicionJugador.z = nextPos.z;
+            posicionJugador.x = _vecNextPos.x;
+            posicionJugador.z = _vecNextPos.z;
             posicionJugador.y = alturaObjetivo;
         }
 
@@ -206,19 +381,45 @@ function bucle(tiempo) {
                 jugadorObj.position.x = posicionJugador.x;
                 jugadorObj.position.z = posicionJugador.z;
 
-                // Cambiar animación según movimiento
-                cambiarAnimacionJugador(moviendo);
+                // Cambiar animación según movimiento y agachado
+                cambiarAnimacionJugador(moviendo, agachado);
 
-                // Rotar modelo hacia la dirección de movimiento
-                if (moviendo) {
-                    const anguloJugador = Math.atan2(forward.x, forward.z);
+                // Rotar modelo hacia la dirección de movimiento O hacia el frente si dispara
+                if (jugadorDisparando) {
+                    jugadorObj.rotation.y = yaw;
+                } else if (moviendo) {
+                    const anguloJugador = Math.atan2(_vecForward.x, _vecForward.z);
                     jugadorObj.rotation.y = anguloJugador;
                 }
 
-                // Ajustar escala si está agachado
+                // FORZAR escala fija del modelo (la animación FBX tiene keyframes de escala)
                 if (jugadorModelo) {
-                    const escalaY = agachado ? 0.0006 : 0.0008;
-                    jugadorModelo.scale.y += (escalaY - jugadorModelo.scale.y) * 8 * dt;
+                    const escalaY = agachado ? ESCALA_AGACHADO : ESCALA_PERSONAJE;
+                    jugadorModelo.scale.set(ESCALA_PERSONAJE, escalaY, ESCALA_PERSONAJE);
+                }
+
+                // SUAVIZAR rotación del modelo (evita saltos al cambiar animación)
+                if (jugadorContenedor) {
+                    let targetX, targetY, targetZ;
+
+                    if (agachado) {
+                        targetX = agachadoRotacionX;
+                        targetY = agachadoRotacionY;
+                        targetZ = agachadoRotacionZ;
+                    } else if (jugadorMoviendo) {
+                        targetX = caminarRotacionX;
+                        targetY = caminarRotacionY;
+                        targetZ = caminarRotacionZ;
+                    } else {
+                        targetX = paradoRotacionX;
+                        targetY = paradoRotacionY;
+                        targetZ = paradoRotacionZ;
+                    }
+
+                    // Interpolar rotación suavemente (10 * dt es ~0.3s)
+                    jugadorContenedor.rotation.x += (targetX - jugadorContenedor.rotation.x) * 10 * dt;
+                    jugadorContenedor.rotation.y += (targetY - jugadorContenedor.rotation.y) * 10 * dt;
+                    jugadorContenedor.rotation.z += (targetZ - jugadorContenedor.rotation.z) * 10 * dt;
                 }
             }
 
@@ -280,56 +481,39 @@ function bucle(tiempo) {
         }
         const dirY = terceraPersona ? 0 : Math.sin(pitch);
 
-        const targetPos = new THREE.Vector3(
+        _vecTarget.set(
             posicionJugador.x + dirX * 10,
             posicionJugador.y + dirY * 10,
             posicionJugador.z + dirZ * 10
         );
-        linterna.target.position.copy(targetPos);
+        linterna.target.position.copy(_vecTarget);
 
-        // --- LÓGICA DE PROYECTILES SIUM ---
-        const velocidadBala = 45 * dt;
-        for (let i = proyectilesSium.length - 1; i >= 0; i--) {
-            const p = proyectilesSium[i];
-            p.mesh.position.addScaledVector(p.dir, velocidadBala);
-            p.dist += velocidadBala;
-
-            // Colisión con paredes
-            // Bala pasa hueco si su altura es menor a 1.8 (aprox)
-            const balaBaja = p.mesh.position.y < 1.8;
-            if (colision(p.mesh.position.x, p.mesh.position.z, balaBaja)) {
-                escena.remove(p.mesh);
-                proyectilesSium.splice(i, 1);
-                continue;
-            }
-
-            // Colisión con personajes
-            if (p.owner === 1) { // Bala del humano
-                if (p.mesh.position.distanceTo(botObj.position) < 1.5) {
-                    finalizar("¡HAS GANADO!");
-                    break;
+        // --- LÓGICA DE PROYECTILES SIUM (POOLED) ---
+        if (projectilePool) {
+            projectilePool.update(dt, function (p) {
+                // Colisión con personajes
+                if (p.owner === 1) { // Bala del humano
+                    if (p.mesh.position.distanceTo(botObj.position) < 1.5) {
+                        finalizar("¡HAS GANADO!");
+                        return true;
+                    }
+                } else { // Bala del bot
+                    _vecJugador.set(posicionJugador.x, posicionJugador.y, posicionJugador.z);
+                    if (p.mesh.position.distanceTo(_vecJugador) < 1.0) {
+                        finalizar("BOT TE ELIMINÓ");
+                        return true;
+                    }
                 }
-            } else { // Bala del bot
-                const jugadorVecBala = new THREE.Vector3(posicionJugador.x, posicionJugador.y, posicionJugador.z);
-                if (p.mesh.position.distanceTo(jugadorVecBala) < 1.0) {
-                    finalizar("BOT TE ELIMINÓ");
-                    break;
-                }
-            }
-
-            // Rango máximo
-            if (p.dist > 60) {
-                escena.remove(p.mesh);
-                proyectilesSium.splice(i, 1);
-            }
+                return false;
+            });
         }
 
         // ============================================
         // BOT IA TÁCTICA CON MOVIMIENTO NATURAL
         // ============================================
         // Usar posicionJugador en lugar de camara.position para soportar tercera persona
-        const jugadorVec = new THREE.Vector3(posicionJugador.x, posicionJugador.y, posicionJugador.z);
-        const distBot = botObj.position.distanceTo(jugadorVec);
+        _vecJugador.set(posicionJugador.x, posicionJugador.y, posicionJugador.z);
+        const distBot = botObj.position.distanceTo(_vecJugador);
         const botPos = { x: botObj.position.x, z: botObj.position.z };
         const jugadorPos = { x: posicionJugador.x, z: posicionJugador.z };
         const esCazador = cazadorId === 2;
@@ -389,8 +573,8 @@ function bucle(tiempo) {
         const distMov = Math.sqrt(dirBotRaw.x * dirBotRaw.x + dirBotRaw.z * dirBotRaw.z);
         const botSeMovio = distMov > 0.1;
 
-        // Cambiar animación del bot según movimiento
-        cambiarAnimacionBot(botSeMovio);
+        // Cambiar animación del bot según movimiento y si debe agacharse
+        cambiarAnimacionBot(botSeMovio, botDebeAgacharse);
 
         if (botSeMovio) {
             // Normalizar dirección raw
@@ -449,11 +633,34 @@ function bucle(tiempo) {
             botObj.rotation.y = anguloRotacion;
         }
 
-        // El modelo está en el suelo, no necesita ajuste de altura como el cubo
-        // Solo ajustar si está agachado (reducir escala Y del modelo)
+        // FORZAR escala fija del bot (la animación FBX tiene keyframes de escala)
         if (botModelo) {
-            const escalaY = botDebeAgacharse ? 0.0006 : 0.0008;
-            botModelo.scale.y += (escalaY - botModelo.scale.y) * 8 * dt;
+            const escalaY = botDebeAgacharse ? ESCALA_AGACHADO : ESCALA_PERSONAJE;
+            botModelo.scale.set(ESCALA_PERSONAJE, escalaY, ESCALA_PERSONAJE);
+        }
+
+        // SUAVIZAR rotación del bot (evita saltos al cambiar animación)
+        if (botContenedor) {
+            let targetX, targetY, targetZ;
+
+            if (botDebeAgacharse) {
+                targetX = agachadoRotacionX;
+                targetY = agachadoRotacionY;
+                targetZ = agachadoRotacionZ;
+            } else if (botMoviendo) {
+                targetX = caminarRotacionX;
+                targetY = caminarRotacionY;
+                targetZ = caminarRotacionZ;
+            } else {
+                targetX = paradoRotacionX;
+                targetY = paradoRotacionY;
+                targetZ = paradoRotacionZ;
+            }
+
+            // Interpolar rotación suavemente (10 * dt es ~0.3s)
+            botContenedor.rotation.x += (targetX - botContenedor.rotation.x) * 10 * dt;
+            botContenedor.rotation.y += (targetY - botContenedor.rotation.y) * 10 * dt;
+            botContenedor.rotation.z += (targetZ - botContenedor.rotation.z) * 10 * dt;
         }
 
         // Temporizador de roles
@@ -463,7 +670,13 @@ function bucle(tiempo) {
             cazadorId = cazadorId === 1 ? 2 : 1;
             actualizarUI();
         }
-        document.getElementById('reloj').innerText = Math.ceil(tiempo);
+
+        // Throttle de UI: solo actualizar si el valor cambió
+        const relojActual = Math.ceil(tiempo);
+        if (relojActual !== _lastRelojValue) {
+            _lastRelojValue = relojActual;
+            document.getElementById('reloj').innerText = relojActual;
+        }
     }
 
     // ========================================

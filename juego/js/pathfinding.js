@@ -84,14 +84,22 @@ class Pathfinder {
         const inicio = this.worldToGrid(inicioWorld.x, inicioWorld.z);
         const destino = this.worldToGrid(destinoWorld.x, destinoWorld.z);
 
-        // Verificar si necesitamos recalcular
+        // Verificar caché de rutas (nuevo sistema TTL)
+        if (gameCache) {
+            const cachedPath = gameCache.getPath(inicio.x, inicio.y, destino.x, destino.y);
+            if (cachedPath) {
+                return cachedPath;
+            }
+        }
+
+        // También mantener el sistema de recálculo por frames como backup
         if (this.rutaCache && this.ultimoDestino && this.ultimoInicio) {
             const distDestinoChange = Math.abs(destino.x - this.ultimoDestino.x) +
                 Math.abs(destino.y - this.ultimoDestino.y);
             const distInicioChange = Math.abs(inicio.x - this.ultimoInicio.x) +
                 Math.abs(inicio.y - this.ultimoInicio.y);
-            // Recalcular menos frecuentemente pero siempre si nos movimos
-            if (distDestinoChange < 2 && distInicioChange < 2 && this.contadorRecalculo < 15) {
+            // Recalcular menos frecuentemente (30 frames = ~0.5 segundos a 60fps)
+            if (distDestinoChange < 2 && distInicioChange < 2 && this.contadorRecalculo < 30) {
                 this.contadorRecalculo++;
                 return this.rutaCache;
             }
@@ -142,6 +150,10 @@ class Pathfinder {
             // ¿Llegamos al destino?
             if (actual.x === destino.x && actual.y === destino.y) {
                 this.rutaCache = this.reconstruirRuta(actual);
+                // Guardar en caché TTL
+                if (gameCache) {
+                    gameCache.setPath(inicio.x, inicio.y, destino.x, destino.y, this.rutaCache);
+                }
                 return this.rutaCache;
             }
 
@@ -244,5 +256,4 @@ var pathfinder = null;
 
 function inicializarPathfinder() {
     pathfinder = new Pathfinder(laberinto, DIMENSION, ESCALA);
-    console.log('Pathfinder A* inicializado correctamente');
 }

@@ -1,3 +1,10 @@
+// ========================================
+// MATERIALES COMPARTIDOS (Optimización)
+// ========================================
+var matPared = null;
+var matHueco = null;
+var matSuelo = null;
+
 function generarLaberinto() {
     for (let y = 0; y < DIMENSION; y++) {
         laberinto[y] = [];
@@ -18,68 +25,81 @@ function generarLaberinto() {
     excavar(1, 1);
 
     // --- Generación de Huecos (Agacharse) ---
-    // Convertir algunas paredes (1) en huecos (2) si conectan pasillos
     for (let y = 1; y < DIMENSION - 1; y++) {
         for (let x = 1; x < DIMENSION - 1; x++) {
-            if (laberinto[y][x] === 1 && Math.random() < 0.15) { // 15% de probabilidad
-                // Verificar si es una pared delgada horizontal o vertical
+            if (laberinto[y][x] === 1 && Math.random() < 0.15) {
                 const horiz = laberinto[y][x - 1] === 0 && laberinto[y][x + 1] === 0;
                 const vert = laberinto[y - 1][x] === 0 && laberinto[y + 1][x] === 0;
                 if (horiz || vert) {
-                    laberinto[y][x] = 2; // TILE_HOLE
+                    laberinto[y][x] = 2;
                 }
             }
         }
     }
 
-    // --- Carga de Texturas ---
-    const loader = new THREE.TextureLoader();
-    const texPared = loader.load('texturas/pared.png');
-    const texSuelo = loader.load('texturas/suelo.png');
+    // --- Carga de Texturas (tracked) ---
+    const texPared = cargarTextura('texturas/pared.png');
+    const texSuelo = cargarTextura('texturas/suelo.png', (tex) => {
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(DIMENSION, DIMENSION);
+    });
 
-    // Configurar repetición para el suelo
-    texSuelo.wrapS = THREE.RepeatWrapping;
-    texSuelo.wrapT = THREE.RepeatWrapping;
-    texSuelo.repeat.set(DIMENSION, DIMENSION);
+    // Materiales compartidos globales
+    matPared = new THREE.MeshStandardMaterial({ map: texPared, color: 0x222222, roughness: 0.9 });
+    matHueco = new THREE.MeshStandardMaterial({ map: texPared, color: 0xbbbbbb, roughness: 0.9 });
+    matSuelo = new THREE.MeshStandardMaterial({ map: texSuelo, color: 0x888888, roughness: 0.8 });
 
-    const geoPared = new THREE.BoxGeometry(ESCALA, 7, ESCALA);
-    // Color oscuro de respaldo si la textura no carga
-    const matPared = new THREE.MeshStandardMaterial({ map: texPared, color: 0x222222, roughness: 0.9 });
-
-    // Geometry for Hanging Wall (Hole)
-    // Pared flotante: De Y=3 a Y=7 (Altura 4), dejando hueco abajo de 0 a 3? 
-    // Altura agachado ~1.5. Dejemos hueco hasta 1.8. 
-    // Pared total 7. Techo en 7.
-    // Pared normal: y=3.5 (centro), h=7 -> De 0 a 7.
-    // Pared hueco: Queremos hueco de 0 a 1.8. Pared de 1.8 a 7. -> Altura 5.2. Centro = 1.8 + 5.2/2 = 4.4.
-    const geoHueco = new THREE.BoxGeometry(ESCALA, 5.2, ESCALA);
-    // Pared hueca un poco más oscura para diferenciar
-    const matHueco = new THREE.MeshStandardMaterial({ map: texPared, color: 0xbbbbbb, roughness: 0.9 });
+    // --- Contar paredes y huecos para InstancedMesh ---
+    let countParedes = 0;
+    let countHuecos = 0;
+    for (let y = 0; y < DIMENSION; y++) {
+        for (let x = 0; x < DIMENSION; x++) {
+            if (laberinto[y][x] === 1) countParedes++;
+            else if (laberinto[y][x] === 2) countHuecos++;
+        }
+    }
 
     const offset = (DIMENSION * ESCALA) / 2;
+    const geoPared = new THREE.BoxGeometry(ESCALA, 7, ESCALA);
+    const geoHueco = new THREE.BoxGeometry(ESCALA, 5.2, ESCALA);
+
+    // --- InstancedMesh para paredes normales ---
+    const instancedParedes = new THREE.InstancedMesh(geoPared, matPared, countParedes);
+    instancedParedes.castShadow = true;
+    instancedParedes.receiveShadow = true;
+
+    // --- InstancedMesh para huecos ---
+    const instancedHuecos = new THREE.InstancedMesh(geoHueco, matHueco, countHuecos);
+    instancedHuecos.castShadow = true;
+    instancedHuecos.receiveShadow = true;
+
+    // Matriz de transformación reutilizable
+    const matrix = new THREE.Matrix4();
+    let iPared = 0;
+    let iHueco = 0;
 
     for (let y = 0; y < DIMENSION; y++) {
         for (let x = 0; x < DIMENSION; x++) {
             const val = laberinto[y][x];
             if (val === 1) {
-                const muro = new THREE.Mesh(geoPared, matPared);
-                muro.position.set(x * ESCALA - offset, 3.5, y * ESCALA - offset);
-                muro.castShadow = true;
-                muro.receiveShadow = true;
-                escena.add(muro);
+                matrix.setPosition(x * ESCALA - offset, 3.5, y * ESCALA - offset);
+                instancedParedes.setMatrixAt(iPared++, matrix);
             } else if (val === 2) {
-                const muro = new THREE.Mesh(geoHueco, matHueco);
-                muro.position.set(x * ESCALA - offset, 4.4, y * ESCALA - offset);
-                muro.castShadow = true;
-                muro.receiveShadow = true;
-                escena.add(muro);
+                matrix.setPosition(x * ESCALA - offset, 4.4, y * ESCALA - offset);
+                instancedHuecos.setMatrixAt(iHueco++, matrix);
             }
         }
     }
 
+    instancedParedes.instanceMatrix.needsUpdate = true;
+    if (countHuecos > 0) instancedHuecos.instanceMatrix.needsUpdate = true;
+
+    escena.add(instancedParedes);
+    if (countHuecos > 0) escena.add(instancedHuecos);
+
+    // --- Suelo ---
     const geoSuelo = new THREE.PlaneGeometry(DIMENSION * ESCALA, DIMENSION * ESCALA);
-    // Suelo con textura
-    const matSuelo = new THREE.MeshStandardMaterial({ map: texSuelo, color: 0x888888, roughness: 0.8 });
     const suelo = new THREE.Mesh(geoSuelo, matSuelo);
     suelo.rotation.x = -Math.PI / 2;
     suelo.receiveShadow = true;
