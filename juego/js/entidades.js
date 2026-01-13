@@ -131,10 +131,30 @@ function cargarModelosPersonaje(idJugador) {
         contenedorRotacion.add(object);
 
         const lucesAEliminar = [];
+        const personData = personajesSium[idJugador];
+        let manualTexture = null;
+
+        if (personData.textura) {
+            manualTexture = cargarTextura(personData.textura);
+            manualTexture.encoding = THREE.sRGBEncoding;
+            manualTexture.flipY = true;
+            console.log(`Aplicando textura manual a ${idJugador}: ${personData.textura}`);
+        }
+
         object.traverse(child => {
             if (child.isMesh) {
                 child.castShadow = true;
                 child.receiveShadow = true;
+
+                if (manualTexture) {
+                    const applyTex = (m) => {
+                        m.map = manualTexture;
+                        m.color.set(0xffffff); // Asegurar que sea blanco para que no tinte la textura
+                        m.needsUpdate = true;
+                    };
+                    if (Array.isArray(child.material)) child.material.forEach(applyTex); else applyTex(child.material);
+                }
+
                 if (child.material) {
                     const cfg = (m) => { if (m.map) m.map.encoding = THREE.sRGBEncoding; m.needsUpdate = true; };
                     if (Array.isArray(child.material)) child.material.forEach(cfg); else cfg(child.material);
@@ -201,7 +221,8 @@ function cargarModelosPersonaje(idJugador) {
     botMixer = null;
 
     const idBot = idJugador === 'agente' ? 'cill' : 'agente';
-    const modelsBot = personajesSium[idBot].modelos;
+    const personDataBot = personajesSium[idBot];
+    const modelsBot = personDataBot.modelos;
 
     cargarFBX(modelsBot.caminar, function (object) {
         botModelo = object;
@@ -213,10 +234,27 @@ function cargarModelosPersonaje(idJugador) {
         contenedorRotacion.add(object);
 
         const lucesAEliminarBot = [];
+        let manualTextureBot = null;
+        if (personDataBot.textura) {
+            manualTextureBot = cargarTextura(personDataBot.textura);
+            manualTextureBot.encoding = THREE.sRGBEncoding;
+            manualTextureBot.flipY = true;
+        }
+
         object.traverse(child => {
             if (child.isMesh) {
                 child.castShadow = true;
                 child.receiveShadow = true;
+
+                if (manualTextureBot) {
+                    const applyTex = (m) => {
+                        m.map = manualTextureBot;
+                        m.color.set(0xffffff);
+                        m.needsUpdate = true;
+                    };
+                    if (Array.isArray(child.material)) child.material.forEach(applyTex); else applyTex(child.material);
+                }
+
                 if (child.material) {
                     const cfg = (m) => { if (m.map) m.map.encoding = THREE.sRGBEncoding; m.needsUpdate = true; };
                     if (Array.isArray(child.material)) child.material.forEach(cfg); else cfg(child.material);

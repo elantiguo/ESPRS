@@ -50,6 +50,18 @@ var personajesSium = {
             agachado: 'modelos/personajes/rufy_agachada.fbx',
             disparo: 'modelos/personajes/rufy_parada_disparando_pistola.fbx'
         }
+    },
+    'ivan': {
+        id: 'ivan',
+        nombre: 'IVAN',
+        desc: 'Un nuevo guerrero se une a la batalla.',
+        modelos: {
+            caminar: 'modelos/personajes/ivan_caminar.fbx',
+            parado: 'modelos/personajes/ivan_parado.fbx',
+            agachado: 'modelos/personajes/ivan_agachado.fbx',
+            disparo: 'modelos/personajes/ivan_paraoa_disparando_pistola.fbx'
+        },
+        textura: 'modelos/personajes/ivan_textura.png'
     }
 };
 

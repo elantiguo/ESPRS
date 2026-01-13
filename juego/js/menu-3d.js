@@ -26,7 +26,14 @@ function initVisoresPersonajes() {
         contenedor.appendChild(vRender.domElement);
 
         // Iluminación futurista
-        const luzPuntual = new THREE.PointLight(id === 'agente' ? 0x00aaff : (id === 'rufy' ? 0xff00ff : 0xffff00), 2, 10);
+        const lightColors = {
+            'agente': 0x00aaff,
+            'rufy': 0xff00ff,
+            'ivan': 0x00ff88,
+            'cill': 0xffff00
+        };
+        const colorLuz = lightColors[id] || 0xffffff;
+        const luzPuntual = new THREE.PointLight(colorLuz, 2, 10);
         luzPuntual.position.set(2, 2, 2);
         vEscena.add(luzPuntual);
         vEscena.add(new THREE.AmbientLight(0xffffff, 0.5));
@@ -58,6 +65,14 @@ function initVisoresPersonajes() {
             vEscena.add(object);
             visoresMenu[id].modelo = object;
 
+            const pData = personajesSium[id];
+            let visorTexture = null;
+            if (pData.textura) {
+                visorTexture = cargarTextura(pData.textura);
+                visorTexture.encoding = THREE.sRGBEncoding;
+                visorTexture.flipY = true;
+            }
+
             if (object.animations && object.animations.length > 0) {
                 const mixer = new THREE.AnimationMixer(object);
                 visoresMenu[id].mixer = mixer;
@@ -69,6 +84,16 @@ function initVisoresPersonajes() {
             object.traverse(child => {
                 if (child.isMesh) {
                     child.castShadow = true;
+
+                    if (visorTexture) {
+                        const apply = (m) => {
+                            m.map = visorTexture;
+                            m.color.set(0xffffff);
+                            m.needsUpdate = true;
+                        };
+                        if (Array.isArray(child.material)) child.material.forEach(apply); else apply(child.material);
+                    }
+
                     if (child.material) {
                         if (Array.isArray(child.material)) {
                             child.material.forEach(m => { m.skinning = true; });
