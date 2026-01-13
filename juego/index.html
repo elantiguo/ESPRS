@@ -93,19 +93,31 @@
                             Selecciona Operativo</h3>
                         <div class="flex gap-4">
                             <button onclick="seleccionarPersonaje('agente')" id="btn-p-agente"
-                                class="flex-1 p-3 border border-white/10 transition-all hover:bg-white/5 group">
-                                <div class="text-white font-black italic text-sm group-hover:text-blue-400">AGENTE</div>
-                                <div class="text-[8px] text-zinc-500 uppercase mt-1">Sium Force</div>
+                                class="flex-1 p-0 border border-white/10 transition-all hover:bg-white/5 group overflow-hidden">
+                                <div id="visor-agente" class="visor-personaje"></div>
+                                <div class="p-3">
+                                    <div class="text-white font-black italic text-sm group-hover:text-blue-400">AGENTE
+                                    </div>
+                                    <div class="text-[8px] text-zinc-500 uppercase mt-1">Sium Force</div>
+                                </div>
                             </button>
                             <button onclick="seleccionarPersonaje('cill')" id="btn-p-cill"
-                                class="flex-1 p-3 border border-white/10 transition-all hover:bg-white/5 group">
-                                <div class="text-white font-black italic text-sm group-hover:text-yellow-400">CILL</div>
-                                <div class="text-[8px] text-zinc-500 uppercase mt-1">Cebolla Hybrid</div>
+                                class="flex-1 p-0 border border-white/10 transition-all hover:bg-white/5 group overflow-hidden">
+                                <div id="visor-cill" class="visor-personaje"></div>
+                                <div class="p-3">
+                                    <div class="text-white font-black italic text-sm group-hover:text-yellow-400">CILL
+                                    </div>
+                                    <div class="text-[8px] text-zinc-500 uppercase mt-1">Cebolla Hybrid</div>
+                                </div>
                             </button>
                             <button onclick="seleccionarPersonaje('rufy')" id="btn-p-rufy"
-                                class="flex-1 p-3 border border-white/10 transition-all hover:bg-white/5 group">
-                                <div class="text-white font-black italic text-sm group-hover:text-pink-400">RUFY</div>
-                                <div class="text-[8px] text-zinc-500 uppercase mt-1">Rabbit Hybrid</div>
+                                class="flex-1 p-0 border border-white/10 transition-all hover:bg-white/5 group overflow-hidden">
+                                <div id="visor-rufy" class="visor-personaje"></div>
+                                <div class="p-3">
+                                    <div class="text-white font-black italic text-sm group-hover:text-pink-400">RUFY
+                                    </div>
+                                    <div class="text-[8px] text-zinc-500 uppercase mt-1">Rabbit Hybrid</div>
+                                </div>
                             </button>
                         </div>
                         <p id="personaje-desc"
@@ -262,6 +274,7 @@
     <script src="js/bot-tactico.js"></script>
     <script src="js/entidades.js"></script>
     <script src="js/pool.js"></script>
+    <script src="js/menu-3d.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/main.js"></script>
 
