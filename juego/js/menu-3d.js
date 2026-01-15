@@ -30,7 +30,9 @@ function initVisoresPersonajes() {
             'agente': 0x00aaff,
             'rufy': 0xff00ff,
             'ivan': 0x00ff88,
-            'cill': 0xffff00
+            'cill': 0xffff00,
+            'nero': 0xff4400,
+            'drina': 0xffaa00
         };
         const colorLuz = lightColors[id] || 0xffffff;
         const luzPuntual = new THREE.PointLight(colorLuz, 2, 10);

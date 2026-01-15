@@ -60,23 +60,31 @@ function seleccionarPersonaje(id) {
     if (descEl) descEl.innerText = p.desc;
 
     // Reset borders
-    const btnAgente = document.getElementById('btn-p-agente');
-    const btnCill = document.getElementById('btn-p-cill');
-    const btnRufy = document.getElementById('btn-p-rufy');
-    const btnIvan = document.getElementById('btn-p-ivan');
-
-    if (btnAgente) btnAgente.classList.remove('border-blue-500', 'bg-blue-500/10');
-    if (btnCill) btnCill.classList.remove('border-yellow-500', 'bg-yellow-500/10');
-    if (btnRufy) btnRufy.classList.remove('border-pink-500', 'bg-pink-500/10');
-    if (btnIvan) btnIvan.classList.remove('border-green-500', 'bg-green-500/10');
+    Object.keys(personajesSium).forEach(bid => {
+        const b = document.getElementById('btn-p-' + bid);
+        if (b) b.classList.remove(
+            'border-blue-500', 'bg-blue-500/10',
+            'border-yellow-500', 'bg-yellow-500/10',
+            'border-pink-500', 'bg-pink-500/10',
+            'border-green-500', 'bg-green-500/10',
+            'border-red-500', 'bg-red-500/10',
+            'border-amber-500', 'bg-amber-500/10'
+        );
+    });
 
     // Set active
     const btn = document.getElementById('btn-p-' + id);
     if (btn) {
-        if (id === 'agente') btn.classList.add('border-blue-500', 'bg-blue-500/10');
-        if (id === 'cill') btn.classList.add('border-yellow-500', 'bg-yellow-500/10');
-        if (id === 'rufy') btn.classList.add('border-pink-500', 'bg-pink-500/10');
-        if (id === 'ivan') btn.classList.add('border-green-500', 'bg-green-500/10');
+        const colors = {
+            'agente': ['border-blue-500', 'bg-blue-500/10'],
+            'cill': ['border-yellow-500', 'bg-yellow-500/10'],
+            'rufy': ['border-pink-500', 'bg-pink-500/10'],
+            'ivan': ['border-green-500', 'bg-green-500/10'],
+            'nero': ['border-red-500', 'bg-red-500/10'],
+            'drina': ['border-amber-500', 'bg-amber-500/10']
+        };
+        const [borderClass, bgClass] = colors[id] || ['border-white', 'bg-white/10'];
+        btn.classList.add(borderClass, bgClass);
     }
 
     console.log("Personaje seleccionado:", p.nombre);

@@ -14,6 +14,12 @@ var faseCinematica = 0;         // 0: Countdown, 1: Recorrido Mapa
 var teclas = {};
 var linterna;
 
+// --- Sistema de Salud ---
+const VIDA_MAXIMA = 100;
+var vidaJugador = VIDA_MAXIMA;
+var vidaBot = VIDA_MAXIMA;
+const DANO_PROYECTIL = 20; // Daño base inicial
+
 // ========================================
 // SELECCIÓN DE PERSONAJES
 // ========================================
@@ -62,6 +68,28 @@ var personajesSium = {
             disparo: 'modelos/personajes/ivan_paraoa_disparando_pistola.fbx'
         },
         textura: 'modelos/personajes/ivan_textura.png'
+    },
+    'nero': {
+        id: 'nero',
+        nombre: 'NERO',
+        desc: 'Un imponente guerrero mitad león, mitad humano.',
+        modelos: {
+            caminar: 'modelos/personajes/nero_caminar.fbx',
+            parado: 'modelos/personajes/nero_parado.fbx',
+            agachado: 'modelos/personajes/nero_agachado.fbx',
+            disparo: 'modelos/personajes/nero_disparando_pistola_parada.fbx'
+        }
+    },
+    'drina': {
+        id: 'drina',
+        nombre: 'DRINA',
+        desc: 'Una poderosa guerrera semi-humana con sangre de dragón.',
+        modelos: {
+            caminar: 'modelos/personajes/drina_caminar.fbx',
+            parado: 'modelos/personajes/drina_parada.fbx',
+            agachado: 'modelos/personajes/drina_agachada.fbx',
+            disparo: 'modelos/personajes/drina_disparando_pistola_parada.fbx'
+        }
     }
 };
 
