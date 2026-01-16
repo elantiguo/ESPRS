@@ -26,8 +26,8 @@ const DANO_PROYECTIL = 20; // Daño base inicial
 var personajesSium = {
     'agente': {
         id: 'agente',
-        nombre: 'SIUM AGENT',
-        desc: 'Unidad táctica estándar de élite.',
+        nombre: 'AGENTE',
+        desc: 'Ex-agente de operaciones encubiertas. Condenado por 47 asesinatos selectivos.',
         modelos: {
             caminar: 'modelos/personajes/caminar.fbx',
             parado: 'modelos/personajes/parado.fbx',
@@ -38,7 +38,7 @@ var personajesSium = {
     'cill': {
         id: 'cill',
         nombre: 'CILL',
-        desc: 'Sujeto experimental: Cill, la mujer cebolla.',
+        desc: 'Experimento genético fallido. Eliminó a todos sus creadores.',
         modelos: {
             caminar: 'modelos/personajes/cill_caminar.fbx',
             parado: 'modelos/personajes/cill_parada.fbx',
@@ -49,7 +49,7 @@ var personajesSium = {
     'rufy': {
         id: 'rufy',
         nombre: 'RUFY',
-        desc: 'Una coneja mitad humana muy ágil.',
+        desc: 'Híbrido de conejo. Asesina silenciosa con 200+ víctimas confirmadas.',
         modelos: {
             caminar: 'modelos/personajes/rufy_caminar.fbx',
             parado: 'modelos/personajes/rufy_parada.fbx',
@@ -60,7 +60,7 @@ var personajesSium = {
     'ivan': {
         id: 'ivan',
         nombre: 'IVAN',
-        desc: 'Un nuevo guerrero se une a la batalla.',
+        desc: 'Mercenario fantasma. Nadie sabe cuántos ha matado en las sombras.',
         modelos: {
             caminar: 'modelos/personajes/ivan_caminar.fbx',
             parado: 'modelos/personajes/ivan_parado.fbx',
@@ -72,7 +72,7 @@ var personajesSium = {
     'nero': {
         id: 'nero',
         nombre: 'NERO',
-        desc: 'Un imponente guerrero mitad león, mitad humano.',
+        desc: 'Bestia mitad león. Condenado por masacrar a una colonia entera.',
         modelos: {
             caminar: 'modelos/personajes/nero_caminar.fbx',
             parado: 'modelos/personajes/nero_parado.fbx',
@@ -83,7 +83,7 @@ var personajesSium = {
     'drina': {
         id: 'drina',
         nombre: 'DRINA',
-        desc: 'Una poderosa guerrera semi-humana con sangre de dragón.',
+        desc: 'Sangre de dragón en sus venas. Incineró ciudades por diversión.',
         modelos: {
             caminar: 'modelos/personajes/drina_caminar.fbx',
             parado: 'modelos/personajes/drina_parada.fbx',
@@ -93,8 +93,8 @@ var personajesSium = {
     },
     'carpincho': {
         id: 'carpincho',
-        nombre: 'CARPICHO',
-        desc: 'Un semi humano.',
+        nombre: 'CARPINCHO',
+        desc: 'Apariencia pacífica, corazón asesino. El más letal de todos.',
         modelos: {
             caminar: 'modelos/personajes/carpincho_caminando.fbx',
             parado: 'modelos/personajes/carpincho_parado.fbx',

@@ -114,8 +114,9 @@ function iniciarJuego() {
         reiniciarSimulacion();
     }
 
-    // Ocultar menús
+    // Ocultar menús y mostrar HUD
     document.getElementById('overlay').classList.add('hidden');
+    document.getElementById('hud-juego').classList.remove('hidden');
     ocultarPausa();
 
     // Bloquear puntero INMEDIATAMENTE (requiere gesto del usuario, este botón lo es)

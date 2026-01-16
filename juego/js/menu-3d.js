@@ -13,10 +13,10 @@ function initVisoresPersonajes() {
         // Escena básica
         const vEscena = new THREE.Scene();
 
-        // Cámara con más distancia para asegurar encuadre
-        const vCamara = new THREE.PerspectiveCamera(45, contenedor.clientWidth / contenedor.clientHeight, 0.1, 100);
-        vCamara.position.set(0, 1.2, 5);
-        vCamara.lookAt(0, 0.8, 0);
+        // Cámara optimizada para mejor encuadre del personaje
+        const vCamara = new THREE.PerspectiveCamera(40, contenedor.clientWidth / contenedor.clientHeight, 0.1, 100);
+        vCamara.position.set(0, 0.9, 4.0);
+        vCamara.lookAt(0, 0.5, 0);
 
         // Renderizador
         const vRender = new THREE.WebGLRenderer({ alpha: true, antialias: true });
@@ -54,10 +54,32 @@ function initVisoresPersonajes() {
         const fbxPath = personajesSium[id].modelos.parado;
 
         loader.load(fbxPath, (object) => {
-            // Ajustar escala y posición para que encajen en el visor pequeño
-            const s = 0.0008;
+            // Escalas individuales por personaje (ajustadas según el tamaño de cada modelo)
+            const escalasPorPersonaje = {
+                'agente': 0.0005,
+                'cill': 0.0008,
+                'rufy': 0.0008,
+                'ivan': 0.0005,
+                'nero': 0.0005,     // Nero es más grande, reducir escala
+                'drina': 0.0005,    // Drina es más grande, reducir escala
+                'carpincho': 0.0005 // Carpincho es mucho más grande, reducir más
+            };
+
+            // Posiciones Y individuales para centrar cada modelo
+            const posicionYPorPersonaje = {
+                'agente': -0.85,
+                'cill': -0.85,
+                'rufy': -0.85,
+                'ivan': -0.85,
+                'nero': -0.75,
+                'drina': -0.65,
+                'carpincho': -0.55
+            };
+
+            const s = escalasPorPersonaje[id] || 0.0008;
+            const posY = posicionYPorPersonaje[id] || -0.85;
             object.scale.set(s, s, s);
-            object.position.y = -0.9;
+            object.position.y = posY;
             object.position.z = 0;
 
             // Limpiar tracks de escala problemáticos (igual que en entidades.js)
