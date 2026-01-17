@@ -119,17 +119,17 @@ function generarLaberinto() {
 function colision(nx, nz, agachado = false, radio = 0.5) {
     const offset = (DIMENSION * ESCALA) / 2;
 
-    // Verificar puntos en cruz alrededor de la posición (norte, sur, este, oeste y centro)
+    // ========================================
+    // CB-10: REDUCIR PUNTOS DE COLISIÓN DE 9 A 5
+    // ========================================
+    // Verificar puntos en cruz alrededor de la posición (centro + 4 cardinales)
+    // Removemos las diagonales para reducir verificaciones de 9 a 5 (-44%)
     const puntos = [
         { x: nx, z: nz },               // Centro
         { x: nx + radio, z: nz },      // Derecha
         { x: nx - radio, z: nz },      // Izquierda
         { x: nx, z: nz + radio },      // Abajo
-        { x: nx, z: nz - radio },      // Arriba
-        { x: nx + radio * 0.7, z: nz + radio * 0.7 }, // Diagonales
-        { x: nx - radio * 0.7, z: nz + radio * 0.7 },
-        { x: nx + radio * 0.7, z: nz - radio * 0.7 },
-        { x: nx - radio * 0.7, z: nz - radio * 0.7 }
+        { x: nx, z: nz - radio }       // Arriba
     ];
 
     for (let p of puntos) {

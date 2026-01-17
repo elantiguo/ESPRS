@@ -108,210 +108,206 @@ function spawnEntidades(customX = null, customZ = null) {
 }
 
 function actualizarModelosPersonajes() {
-    if (idPersonajeSeleccionado === idPersonajeCargado) return;
+    if (idPersonajeSeleccionado === idPersonajeCargado) return Promise.resolve();
     console.log("Actualizando modelos de personajes...");
-    cargarModelosPersonaje(idPersonajeSeleccionado);
+    return cargarModelosPersonaje(idPersonajeSeleccionado);
 }
 
 function cargarModelosPersonaje(idJugador) {
-    idPersonajeCargado = idJugador;
+    return new Promise((resolve, reject) => {
+        idPersonajeCargado = idJugador;
 
-    // Limpiar modelos anteriores del jugador
-    if (jugadorContenedor && jugadorContenedor.parent) {
-        jugadorContenedor.parent.remove(jugadorContenedor);
-    }
-    jugadorModelo = null;
-    jugadorMixer = null;
-
-    const models = personajesSium[idJugador].modelos;
-
-    // Cargar Jugador
-    cargarFBX(models.caminar, function (object) {
-        jugadorModelo = object;
-        object.scale.set(ESCALA_PERSONAJE, ESCALA_PERSONAJE, ESCALA_PERSONAJE);
-
-        const contenedorRotacion = new THREE.Group();
-        jugadorContenedor = contenedorRotacion;
-        contenedorRotacion.rotation.set(paradoRotacionX, paradoRotacionY, paradoRotacionZ);
-        contenedorRotacion.add(object);
-
-        const lucesAEliminar = [];
-        const personData = personajesSium[idJugador];
-        let manualTexture = null;
-
-        if (personData.textura) {
-            manualTexture = cargarTextura(personData.textura);
-            manualTexture.encoding = THREE.sRGBEncoding;
-            manualTexture.flipY = true;
-            console.log(`Aplicando textura manual a ${idJugador}: ${personData.textura}`);
+        // Limpiar modelos anteriores del jugador
+        if (jugadorContenedor && jugadorContenedor.parent) {
+            jugadorContenedor.parent.remove(jugadorContenedor);
         }
+        jugadorModelo = null;
+        jugadorMixer = null;
 
-        object.traverse(child => {
-            if (child.isMesh) {
-                child.castShadow = true;
-                child.receiveShadow = true;
+        const models = personajesSium[idJugador].modelos;
 
-                if (manualTexture) {
-                    const applyTex = (m) => {
-                        m.map = manualTexture;
-                        m.color.set(0xffffff); // Asegurar que sea blanco para que no tinte la textura
-                        m.needsUpdate = true;
-                    };
-                    if (Array.isArray(child.material)) child.material.forEach(applyTex); else applyTex(child.material);
+        // Iniciar tracker de carga (8 assets: 2 modelos base + 6 sets de animaciones)
+        matchLoadingTracker.start(8);
+
+        // Cargar Jugador
+        const pJugador = new Promise((resJug, rejJug) => {
+            cargarFBX(models.caminar, function (object) {
+                matchLoadingTracker.track(); // Track modelo base
+                jugadorModelo = object;
+                object.scale.set(ESCALA_PERSONAJE, ESCALA_PERSONAJE, ESCALA_PERSONAJE);
+
+                const contenedorRotacion = new THREE.Group();
+                jugadorContenedor = contenedorRotacion;
+                contenedorRotacion.rotation.set(paradoRotacionX, paradoRotacionY, paradoRotacionZ);
+                contenedorRotacion.add(object);
+
+                const lucesAEliminar = [];
+                const personData = personajesSium[idJugador];
+                let manualTexture = null;
+
+                if (personData.textura) {
+                    manualTexture = cargarTextura(personData.textura);
+                    manualTexture.encoding = THREE.sRGBEncoding;
+                    manualTexture.flipY = true;
                 }
 
-                if (child.material) {
-                    const cfg = (m) => { if (m.map) m.map.encoding = THREE.sRGBEncoding; m.needsUpdate = true; };
-                    if (Array.isArray(child.material)) child.material.forEach(cfg); else cfg(child.material);
-                }
-            }
-            if (child.isLight) {
-                lucesAEliminar.push(child);
-            }
-            const n = child.name.toLowerCase();
-            if (n.includes('tmpqebahx5v') || n.includes('gun') || n.includes('weapon')) {
-                jugadorArmaObj = child;
-                child.visible = false;
-            }
-        });
-        lucesAEliminar.forEach(luz => { if (luz.parent) luz.parent.remove(luz); });
+                object.traverse(child => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        if (manualTexture) {
+                            const applyTex = (m) => { m.map = manualTexture; m.color.set(0xffffff); m.needsUpdate = true; };
+                            if (Array.isArray(child.material)) child.material.forEach(applyTex); else applyTex(child.material);
+                        }
+                    }
+                    if (child.isLight) lucesAEliminar.push(child);
+                    const n = child.name.toLowerCase();
+                    if (n.includes('tmpqebahx5v') || n.includes('gun') || n.includes('weapon')) {
+                        jugadorArmaObj = child;
+                        child.visible = false;
+                    }
+                });
+                lucesAEliminar.forEach(luz => { if (luz.parent) luz.parent.remove(luz); });
 
-        jugadorMixer = new THREE.AnimationMixer(object);
-        jugadorAnimaciones = { caminar: [], parado: [], agachado: [], disparar: [] };
-        limpiarAnimacionesEscala(object.animations);
-        object.animations.forEach(anim => {
-            const action = jugadorMixer.clipAction(anim);
-            action.setLoop(THREE.LoopRepeat);
-            jugadorAnimaciones.caminar.push(action);
-        });
-
-        jugadorObj.add(contenedorRotacion);
-
-        // Cargar otras animaciones jugador
-        cargarFBX(models.parado, function (fbx) {
-            limpiarAnimacionesEscala(fbx.animations);
-            fbx.animations.forEach(anim => {
-                const action = jugadorMixer.clipAction(anim);
-                action.setLoop(THREE.LoopRepeat);
-                jugadorAnimaciones.parado.push(action);
-            });
-            cargarFBX(models.agachado, function (fbx) {
-                limpiarAnimacionesEscala(fbx.animations);
-                fbx.animations.forEach(anim => {
+                jugadorMixer = new THREE.AnimationMixer(object);
+                jugadorAnimaciones = { caminar: [], parado: [], agachado: [], disparar: [] };
+                limpiarAnimacionesEscala(object.animations);
+                object.animations.forEach(anim => {
                     const action = jugadorMixer.clipAction(anim);
                     action.setLoop(THREE.LoopRepeat);
-                    jugadorAnimaciones.agachado.push(action);
+                    jugadorAnimaciones.caminar.push(action);
                 });
-                cargarFBX(models.disparo, function (fbx) {
-                    limpiarAnimacionesEscala(fbx.animations);
-                    fbx.animations.forEach(anim => {
+
+                jugadorObj.add(contenedorRotacion);
+
+                Promise.all([
+                    cargarFBXPromise(models.parado).then(f => { matchLoadingTracker.track(); return f; }),
+                    cargarFBXPromise(models.agachado).then(f => { matchLoadingTracker.track(); return f; }),
+                    cargarFBXPromise(models.disparo).then(f => { matchLoadingTracker.track(); return f; })
+                ]).then(([fbxParado, fbxAgachado, fbxDisparo]) => {
+                    limpiarAnimacionesEscala(fbxParado.animations);
+                    fbxParado.animations.forEach(anim => {
+                        const action = jugadorMixer.clipAction(anim);
+                        action.setLoop(THREE.LoopRepeat);
+                        jugadorAnimaciones.parado.push(action);
+                    });
+
+                    limpiarAnimacionesEscala(fbxAgachado.animations);
+                    fbxAgachado.animations.forEach(anim => {
+                        const action = jugadorMixer.clipAction(anim);
+                        action.setLoop(THREE.LoopRepeat);
+                        jugadorAnimaciones.agachado.push(action);
+                    });
+
+                    limpiarAnimacionesEscala(fbxDisparo.animations);
+                    fbxDisparo.animations.forEach(anim => {
                         const action = jugadorMixer.clipAction(anim);
                         action.setLoop(THREE.LoopOnce);
                         action.clampWhenFinished = true;
                         action.timeScale = 2.0;
                         jugadorAnimaciones.disparar.push(action);
                     });
+
                     cambiarAnimacionJugador(false, false);
-                });
+                    resJug();
+                }).catch(rejJug);
             });
         });
-    });
 
-    // Cargar Bot
-    // Limpiar modelos anteriores del bot
-    if (botContenedor && botContenedor.parent) {
-        botContenedor.parent.remove(botContenedor);
-    }
-    botModelo = null;
-    botMixer = null;
-
-    const idBot = idJugador === 'agente' ? 'cill' : 'agente';
-    const personDataBot = personajesSium[idBot];
-    const modelsBot = personDataBot.modelos;
-
-    cargarFBX(modelsBot.caminar, function (object) {
-        botModelo = object;
-        object.scale.set(ESCALA_PERSONAJE, ESCALA_PERSONAJE, ESCALA_PERSONAJE);
-
-        const contenedorRotacion = new THREE.Group();
-        botContenedor = contenedorRotacion;
-        contenedorRotacion.rotation.set(paradoRotacionX, paradoRotacionY, paradoRotacionZ);
-        contenedorRotacion.add(object);
-
-        const lucesAEliminarBot = [];
-        let manualTextureBot = null;
-        if (personDataBot.textura) {
-            manualTextureBot = cargarTextura(personDataBot.textura);
-            manualTextureBot.encoding = THREE.sRGBEncoding;
-            manualTextureBot.flipY = true;
+        // Cargar Bot
+        if (botContenedor && botContenedor.parent) {
+            botContenedor.parent.remove(botContenedor);
         }
+        botModelo = null;
+        botMixer = null;
 
-        object.traverse(child => {
-            if (child.isMesh) {
-                child.castShadow = true;
-                child.receiveShadow = true;
+        const idBot = idJugador === 'agente' ? 'cill' : 'agente';
+        const personDataBot = personajesSium[idBot];
+        const modelsBot = personDataBot.modelos;
 
-                if (manualTextureBot) {
-                    const applyTex = (m) => {
-                        m.map = manualTextureBot;
-                        m.color.set(0xffffff);
-                        m.needsUpdate = true;
-                    };
-                    if (Array.isArray(child.material)) child.material.forEach(applyTex); else applyTex(child.material);
+        const pBot = new Promise((resBot, rejBot) => {
+            cargarFBX(modelsBot.caminar, function (object) {
+                matchLoadingTracker.track(); // Track modelo base
+                botModelo = object;
+                object.scale.set(ESCALA_PERSONAJE, ESCALA_PERSONAJE, ESCALA_PERSONAJE);
+
+                const contenedorRotacion = new THREE.Group();
+                botContenedor = contenedorRotacion;
+                contenedorRotacion.rotation.set(paradoRotacionX, paradoRotacionY, paradoRotacionZ);
+                contenedorRotacion.add(object);
+
+                const lucesAEliminarBot = [];
+                let manualTextureBot = null;
+                if (personDataBot.textura) {
+                    manualTextureBot = cargarTextura(personDataBot.textura);
+                    manualTextureBot.encoding = THREE.sRGBEncoding;
+                    manualTextureBot.flipY = true;
                 }
 
-                if (child.material) {
-                    const cfg = (m) => { if (m.map) m.map.encoding = THREE.sRGBEncoding; m.needsUpdate = true; };
-                    if (Array.isArray(child.material)) child.material.forEach(cfg); else cfg(child.material);
-                }
-                const n = child.name.toLowerCase();
-                if (n.includes('.obj') || n.includes('gun') || n.includes('weapon')) botArmaObj = child;
-            }
-            if (child.isLight) {
-                lucesAEliminarBot.push(child);
-            }
-        });
-        lucesAEliminarBot.forEach(luz => { if (luz.parent) luz.parent.remove(luz); });
+                object.traverse(child => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        if (manualTextureBot) {
+                            const applyTex = (m) => { m.map = manualTextureBot; m.color.set(0xffffff); m.needsUpdate = true; };
+                            if (Array.isArray(child.material)) child.material.forEach(applyTex); else applyTex(child.material);
+                        }
+                    }
+                    if (child.isLight) lucesAEliminarBot.push(child);
+                    const n = child.name.toLowerCase();
+                    if (n.includes('tmpqebahx5v') || n.includes('.obj') || n.includes('gun') || n.includes('weapon')) {
+                        botArmaObj = child;
+                        child.visible = false;
+                    }
+                });
+                lucesAEliminarBot.forEach(luz => { if (luz.parent) luz.parent.remove(luz); });
 
-        botMixer = new THREE.AnimationMixer(object);
-        botAnimaciones = { caminar: [], parado: [], agachado: [], disparar: [] };
-        limpiarAnimacionesEscala(object.animations);
-        object.animations.forEach(anim => {
-            const action = botMixer.clipAction(anim);
-            action.setLoop(THREE.LoopRepeat);
-            botAnimaciones.caminar.push(action);
-        });
-
-        botObj.add(contenedorRotacion);
-
-        // Cargar otras animaciones bot
-        cargarFBX(modelsBot.parado, function (fbx) {
-            limpiarAnimacionesEscala(fbx.animations);
-            fbx.animations.forEach(anim => {
-                const action = botMixer.clipAction(anim);
-                action.setLoop(THREE.LoopRepeat);
-                botAnimaciones.parado.push(action);
-            });
-            cargarFBX(modelsBot.agachado, function (fbx) {
-                limpiarAnimacionesEscala(fbx.animations);
-                fbx.animations.forEach(anim => {
+                botMixer = new THREE.AnimationMixer(object);
+                botAnimaciones = { caminar: [], parado: [], agachado: [], disparar: [] };
+                limpiarAnimacionesEscala(object.animations);
+                object.animations.forEach(anim => {
                     const action = botMixer.clipAction(anim);
                     action.setLoop(THREE.LoopRepeat);
-                    botAnimaciones.agachado.push(action);
+                    botAnimaciones.caminar.push(action);
                 });
-                cargarFBX(modelsBot.disparo, function (fbx) {
-                    limpiarAnimacionesEscala(fbx.animations);
-                    fbx.animations.forEach(anim => {
+
+                botObj.add(contenedorRotacion);
+
+                Promise.all([
+                    cargarFBXPromise(modelsBot.parado).then(f => { matchLoadingTracker.track(); return f; }),
+                    cargarFBXPromise(modelsBot.agachado).then(f => { matchLoadingTracker.track(); return f; }),
+                    cargarFBXPromise(modelsBot.disparo).then(f => { matchLoadingTracker.track(); return f; })
+                ]).then(([fbxParado, fbxAgachado, fbxDisparo]) => {
+                    limpiarAnimacionesEscala(fbxParado.animations);
+                    fbxParado.animations.forEach(anim => {
+                        const action = botMixer.clipAction(anim);
+                        action.setLoop(THREE.LoopRepeat);
+                        botAnimaciones.parado.push(action);
+                    });
+
+                    limpiarAnimacionesEscala(fbxAgachado.animations);
+                    fbxAgachado.animations.forEach(anim => {
+                        const action = botMixer.clipAction(anim);
+                        action.setLoop(THREE.LoopRepeat);
+                        botAnimaciones.agachado.push(action);
+                    });
+
+                    limpiarAnimacionesEscala(fbxDisparo.animations);
+                    fbxDisparo.animations.forEach(anim => {
                         const action = botMixer.clipAction(anim);
                         action.setLoop(THREE.LoopOnce);
                         action.clampWhenFinished = true;
                         action.timeScale = 2.0;
                         botAnimaciones.disparar.push(action);
                     });
+
                     cambiarAnimacionBot(false, false);
-                });
+                    resBot();
+                }).catch(rejBot);
             });
         });
+
+        Promise.all([pJugador, pBot]).then(() => resolve()).catch(reject);
     });
 }
 
@@ -472,7 +468,16 @@ function cambiarAnimacionBot(moviendo, agachado) {
 
     // Detener todas las animaciones actuales (incluyendo disparo si quedó algo)
     const todasAnim = [...botAnimaciones.caminar, ...botAnimaciones.parado, ...botAnimaciones.agachado, ...botAnimaciones.disparar];
-    todasAnim.forEach(a => a.fadeOut(duracionTransicion));
+    todasAnim.forEach(a => {
+        const nombreLower = a.getClip().name.toLowerCase();
+        const esArma = nombreLower.includes('.obj') || nombreLower.includes('gun') || nombreLower.includes('weapon');
+
+        if (esArma && (!moviendo || agachado)) {
+            a.stop();
+        } else {
+            a.fadeOut(duracionTransicion);
+        }
+    });
 
     let animsActivas = [];
     if (agachado) {
@@ -484,23 +489,20 @@ function cambiarAnimacionBot(moviendo, agachado) {
     }
 
     animsActivas.forEach(a => {
-        // Si estamos parado, no animar el arma
-        if (!moviendo && !agachado) {
-            const nombre = a.getClip().name.toLowerCase();
-            if (nombre.includes('object') || nombre.includes('transform')) {
-                a.stop();
-                return;
-            }
-        }
+        const nombreLower = a.getClip().name.toLowerCase();
+        const esArma = nombreLower.includes('.obj') || nombreLower.includes('gun') || nombreLower.includes('weapon');
 
-        // Si estamos agachados, solo animar si nos movemos
-        if (agachado) {
-            a.timeScale = moviendo ? 1.0 : 0.0;
+        if (esArma && (!moviendo || agachado)) {
+            a.stop();
         } else {
-            a.timeScale = 1.0;
+            // Si estamos agachados, solo animar si nos movemos
+            if (agachado) {
+                a.timeScale = moviendo ? 1.0 : 0.0;
+            } else {
+                a.timeScale = 1.0;
+            }
+            a.reset().fadeIn(duracionTransicion).play();
         }
-
-        a.reset().fadeIn(duracionTransicion).play();
     });
 }
 

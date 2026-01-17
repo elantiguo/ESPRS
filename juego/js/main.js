@@ -8,6 +8,7 @@ function init() {
     renderizador = new THREE.WebGLRenderer({ antialias: true });
     renderizador.setSize(window.innerWidth, window.innerHeight);
     renderizador.shadowMap.enabled = true;
+    renderizador.shadowMap.type = THREE.PCFShadowMap; // Balance entre calidad y rendimiento
     document.body.appendChild(renderizador.domElement);
 
     reloj = new THREE.Clock();
@@ -27,6 +28,11 @@ function init() {
 
     linterna = new THREE.SpotLight(0xffffff, 1.8, 35, Math.PI / 5, 0.4, 1);
     linterna.castShadow = true;
+    // Optimización Fase 3: Reducir resolución de sombras (512x512 es suficiente para linterna)
+    linterna.shadow.mapSize.width = 512;
+    linterna.shadow.mapSize.height = 512;
+    linterna.shadow.camera.near = 0.5;
+    linterna.shadow.camera.far = 40;
     escena.add(linterna);
     escena.add(linterna.target);
 
@@ -99,10 +105,13 @@ function manejarMouse(e) {
     }
 }
 
-function iniciarJuego() {
+async function iniciarJuego() {
     // Si el personaje seleccionado es diferente al cargado, actualizamos modelos
-    if (idPersonajeSeleccionado !== idPersonajeCargado) {
-        actualizarModelosPersonajes();
+    // O si es la primera vez (puede no estar cargado aún o queremos asegurar carga)
+    try {
+        await actualizarModelosPersonajes();
+    } catch (error) {
+        console.error("Error cargando modelos al iniciar:", error);
     }
 
     // Si el juego ha terminado, reiniciamos la simulación sin recargar página
@@ -241,12 +250,23 @@ var ultimoTiempo = 0;
 var animDebugCount = 0;
 
 // ========================================
-// THROTTLE DE RED (enviar posición cada 50ms = 20 updates/s)
+// CB-16: THROTTLE DE RED OPTIMIZADO
 // ========================================
 var _lastNetworkUpdate = 0;
-var _networkThrottleMs = 50;
+var _networkThrottleMs = 100;
 var _lastSentPos = { x: 0, y: 0, z: 0, rotY: 0 };
 var _lastSentAnimacion = 'parado'; // Rastrear último estado de animación enviado
+
+var _lastLogicUpdate = 0;       // Último tiempo de actualización de lógica
+var _logicTickMs = 100;         // Frecuencia de actualización (10Hz)
+var _botTargetPos = { x: 0, z: 0 }; // Posición objetivo calculada por la IA
+var _botTargetRot = 0;          // Rotación objetivo calculada por la IA
+var _botTargetMoviendo = false; // Estado de movimiento objetivo para la IA
+var _botTargetAgachado = false; // Estado de agachado objetivo para la IA
+
+// ========================================
+// POOL DE VECTORES REUTILIZABLES (Optimización)
+// ========================================
 
 function obtenerTileEnPos(x, z) {
     const offset = (DIMENSION * ESCALA) / 2;
@@ -336,13 +356,18 @@ function bucle(tiempo) {
         }
     }
 
-    // Actualizar animaciones del bot SIEMPRE (incluso en pausa para que se vea)
-    if (botMixer) {
-        botMixer.update(dtReal);
-    }
-    // Actualizar animaciones del jugador si está en tercera persona
-    if (jugadorMixer) {
-        jugadorMixer.update(dtReal);
+    // ========================================
+    // CB-04: ACTUALIZAR ANIMACIONES SOLO SI ACTIVO O EN CINEMÁTICA
+    // ========================================
+    // Actualizar animaciones del bot solo cuando sea necesario
+    if (activo || enCinematica) {
+        if (botMixer) {
+            botMixer.update(dtReal);
+        }
+        // Actualizar animaciones del jugador si está en tercera persona
+        if (jugadorMixer) {
+            jugadorMixer.update(dtReal);
+        }
     }
 
     if (activo) {
@@ -430,10 +455,10 @@ function bucle(tiempo) {
 
                 // Solo considerar cambio de rotación si el jugador se está moviendo o disparando
                 // Si está quieto (parado), puede mirar alrededor sin rotar el modelo para otros
-                const cambioRotacionRelevante = (moviendo || jugadorDisparando) && dRot > 0.01;
+                const cambioRotacionRelevante = (moviendo || jugadorDisparando) && dRot > 0.05;
 
-                // Enviar actualización si cambió posición, animación, o rotación (cuando es relevante)
-                if (dx > 0.01 || dz > 0.01 || cambioRotacionRelevante || cambioAnimacion) {
+                // Enviar actualización si cambió posición (>0.05), animación, o rotación (>0.05)
+                if (dx > 0.05 || dz > 0.05 || cambioRotacionRelevante || cambioAnimacion) {
                     // Calcular rotación real del modelo para enviar
                     // IMPORTANTE: En primera persona, el yaw está invertido (+Math.PI) por el sistema de cámara,
                     // pero el modelo debe aparecer correctamente orientado para otros jugadores
@@ -655,107 +680,135 @@ function bucle(tiempo) {
         }
 
         // ============================================
-        // BOT IA TÁCTICA CON MOVIMIENTO NATURAL (Solo Single Player)
+        // IA TÁCTICA CON MOVIMIENTO POR TICKS (Fase 1)
         // ============================================
-        if (!modoMultijugador) {
-            // Usar posicionJugador en lugar de camara.position para soportar tercera persona
-            _vecJugador.set(posicionJugador.x, posicionJugador.y, posicionJugador.z);
-            const distBot = botObj.position.distanceTo(_vecJugador);
+        if (!modoMultijugador && botObj) {
+            const ahora = Date.now();
             const botPos = { x: botObj.position.x, z: botObj.position.z };
             const jugadorPos = { x: posicionJugador.x, z: posicionJugador.z };
             const esCazador = cazadorId === 2;
 
-            // Verificar línea de visión
-            const vision = botTactico.tieneLineaDeVision(
-                botPos, jugadorPos, laberinto, DIMENSION, ESCALA
-            );
+            // --- BLOQUE DE TICKS DE LÓGICA (10Hz) ---
+            if (ahora - _lastLogicUpdate > _logicTickMs) {
+                _vecJugador.set(posicionJugador.x, posicionJugador.y, posicionJugador.z);
+                const distBot = botObj.position.distanceTo(_vecJugador);
 
-            // Actualizar estado del bot
-            const estado = botTactico.actualizarEstado(
-                botPos, jugadorPos, esCazador, vision.visible, distBot, dt, laberinto, DIMENSION, ESCALA
-            );
+                // 1. Verificar línea de visión
+                const vision = botTactico.tieneLineaDeVision(
+                    botPos, jugadorPos, laberinto, DIMENSION, ESCALA
+                );
 
-            // Mostrar información en HUD
-            document.getElementById('distancia-bot').innerText =
-                `${distBot.toFixed(1)}m ${botTactico.getEstadoTexto()}`;
+                // 2. Actualizar estado del bot y memoria
+                botTactico.actualizarEstado(
+                    botPos, jugadorPos, esCazador, vision.visible, distBot, _logicTickMs / 1000, laberinto, DIMENSION, ESCALA
+                );
 
-            // Verificar captura (solo cazador)
-            if (esCazador && distBot < 1.8) {
-                finalizar("EL BOT TE ATRAPÓ");
-            }
-
-            // Sistema de disparo inteligente
-            if (esCazador && botTactico.puedeDisparar(dt)) {
-                if (botTactico.intentarDisparar(distBot, vision.visible)) {
-                    disparar(2);
-                }
-            }
-
-            // Mover el bot...
-            const objetivoBot = botTactico.obtenerObjetivo(botPos, jugadorPos, esCazador, dt);
-            const siguientePunto = pathfinder.obtenerSiguientePunto(botPos, objetivoBot);
-            const botDebeAgacharse = botTactico.debeAgacharse(botPos, laberinto, DIMENSION, ESCALA, siguientePunto);
-
-            let dirBotRaw;
-            if (siguientePunto) {
-                dirBotRaw = { x: siguientePunto.x - botObj.position.x, z: siguientePunto.z - botObj.position.z };
-            } else {
-                dirBotRaw = { x: objetivoBot.x - botObj.position.x, z: objetivoBot.z - botObj.position.z };
-            }
-
-            const distMov = Math.sqrt(dirBotRaw.x * dirBotRaw.x + dirBotRaw.z * dirBotRaw.z);
-            const botSeMovio = distMov > 0.1;
-
-            cambiarAnimacionBot(botSeMovio, botDebeAgacharse);
-
-            if (botSeMovio) {
-                const dirNormX = dirBotRaw.x / distMov;
-                const dirNormZ = dirBotRaw.z / distMov;
-                const dirSuave = botTactico.suavizarDireccion(dirNormX, dirNormZ, dt);
-
-                botTactico.intentarEsquivar(botPos, proyectilesSium, dt);
-                const esquive = botTactico.obtenerModificadorEsquive();
-
-                let dirFinalX = dirSuave.x;
-                let dirFinalZ = dirSuave.z;
-
-                if (esquive.activo) {
-                    dirFinalX = dirSuave.x * 0.3 + esquive.x * 0.7;
-                    dirFinalZ = dirSuave.z * 0.3 + esquive.z * 0.7;
-                    const magFinal = Math.sqrt(dirFinalX * dirFinalX + dirFinalZ * dirFinalZ);
-                    if (magFinal > 0) {
-                        dirFinalX /= magFinal;
-                        dirFinalZ /= magFinal;
+                // 3. Sistema de disparo inteligente
+                if (esCazador && botTactico.puedeDisparar(_logicTickMs / 1000)) {
+                    if (botTactico.intentarDisparar(distBot, vision.visible)) {
+                        disparar(2);
                     }
                 }
 
-                const velocidadBase = 7 * dt;
-                let velocidadBot = botTactico.obtenerVelocidad(velocidadBase);
-                if (esquive.activo) velocidadBot *= 2.0;
+                // 4. Calcular OBJETIVO de movimiento
+                const objetivoBot = botTactico.obtenerObjetivo(botPos, jugadorPos, esCazador, _logicTickMs / 1000);
+                const siguientePunto = pathfinder.obtenerSiguientePunto(botPos, objetivoBot);
+                const botDebeAgacharse = botTactico.debeAgacharse(botPos, laberinto, DIMENSION, ESCALA, siguientePunto);
+                _botTargetAgachado = botDebeAgacharse; // Guardar estado objetivo para el frame loop
 
-                const nX = botObj.position.x + dirFinalX * velocidadBot;
-                const nZ = botObj.position.z + dirFinalZ * velocidadBot;
+                let dirBotRaw;
+                if (siguientePunto) {
+                    dirBotRaw = { x: siguientePunto.x - botPos.x, z: siguientePunto.z - botPos.z };
+                } else {
+                    dirBotRaw = { x: objetivoBot.x - botPos.x, z: objetivoBot.z - botPos.z };
+                }
 
-                if (!colision(nX, botObj.position.z, botDebeAgacharse, RADIO_BOT)) botObj.position.x = nX;
-                if (!colision(botObj.position.x, nZ, botDebeAgacharse, RADIO_BOT)) botObj.position.z = nZ;
+                const distMov = Math.sqrt(dirBotRaw.x * dirBotRaw.x + dirBotRaw.z * dirBotRaw.z);
 
-                botObj.rotation.y = Math.atan2(dirFinalX, dirFinalZ);
+                if (distMov > 0.1) {
+                    const dirNormX = dirBotRaw.x / distMov;
+                    const dirNormZ = dirBotRaw.z / distMov;
+                    const dirSuave = botTactico.suavizarDireccion(dirNormX, dirNormZ, _logicTickMs / 1000);
+
+                    botTactico.intentarEsquivar(botPos, proyectilesSium, _logicTickMs / 1000);
+                    const esquive = botTactico.obtenerModificadorEsquive();
+
+                    let dirFinalX = dirSuave.x;
+                    let dirFinalZ = dirSuave.z;
+
+                    if (esquive.activo) {
+                        dirFinalX = dirSuave.x * 0.3 + esquive.x * 0.7;
+                        dirFinalZ = dirSuave.z * 0.3 + esquive.z * 0.7;
+                        const magFinal = Math.sqrt(dirFinalX * dirFinalX + dirFinalZ * dirFinalZ);
+                        if (magFinal > 0) {
+                            dirFinalX /= magFinal;
+                            dirFinalZ /= magFinal;
+                        }
+                    }
+
+                    _botTargetPos.x = dirFinalX;
+                    _botTargetPos.z = dirFinalZ;
+                    _botTargetRot = Math.atan2(dirFinalX, dirFinalZ);
+                    _botTargetMoviendo = true;
+                } else {
+                    _botTargetMoviendo = false;
+                }
+
+                // Actualizar textos de HUD cada tick
+                document.getElementById('distancia-bot').innerText =
+                    `${distBot.toFixed(1)}m ${botTactico.getEstadoTexto()}`;
+
+                _lastLogicUpdate = ahora;
             }
 
+            // --- APLICACIÓN DE MOVIMIENTO SUAVE (En cada frame) ---
+            if (botMoviendo) {
+                const velocidadBase = 7 * dt;
+                let velocidadBot = botTactico.obtenerVelocidad(velocidadBase);
+
+                // Aplicar bono de esquive si está esquivando (aunque el cálculo sea por ticks)
+                const esquive = botTactico.obtenerModificadorEsquive();
+                if (esquive.activo) velocidadBot *= 2.0;
+
+                const nX = botObj.position.x + _botTargetPos.x * velocidadBot;
+                const nZ = botObj.position.z + _botTargetPos.z * velocidadBot;
+
+                if (!colision(nX, botObj.position.z, botAgachado, RADIO_BOT)) botObj.position.x = nX;
+                if (!colision(botObj.position.x, nZ, botAgachado, RADIO_BOT)) botObj.position.z = nZ;
+
+                // Suavizar rotación del bot (LERP)
+                const a0 = botObj.rotation.y;
+                const a1 = _botTargetRot;
+                const distR = ((a1 - a0 + Math.PI) % (Math.PI * 2)) - Math.PI;
+                botObj.rotation.y += distR * 10 * dt;
+            }
+
+            // Actualizar visuales (Agachado/Escala) siempre
+            // LLamar a cambiarAnimacionBot con los valores objetivo. 
+            // La función se encarga de detectar si hubo cambio respecto a botAgachado/botMoviendo actuales.
+            cambiarAnimacionBot(_botTargetMoviendo, _botTargetAgachado);
+
+            // Sincronizar estados visuales para el resto del frame loop (colisiones, escala, etc.)
+            // IMPORTANTE: Esto debe ir DESPUÉS de cambiarAnimacionBot para que la función detecte el cambio.
+            botAgachado = _botTargetAgachado;
+            botMoviendo = _botTargetMoviendo;
+
             if (botModelo) {
-                const escalaY = botDebeAgacharse ? ESCALA_AGACHADO : ESCALA_PERSONAJE;
-                botModelo.scale.set(ESCALA_PERSONAJE, escalaY, ESCALA_PERSONAJE);
+                const escalaY = botAgachado ? ESCALA_AGACHADO : ESCALA_PERSONAJE;
+                botModelo.scale.y += (escalaY - botModelo.scale.y) * 10 * dt;
+                botModelo.scale.x = ESCALA_PERSONAJE;
+                botModelo.scale.z = ESCALA_PERSONAJE;
             }
 
             if (botContenedor) {
-                let targetX = botDebeAgacharse ? agachadoRotacionX : (botMoviendo ? caminarRotacionX : paradoRotacionX);
-                let targetY = botDebeAgacharse ? agachadoRotacionY : (botMoviendo ? caminarRotacionY : paradoRotacionY);
-                let targetZ = botDebeAgacharse ? agachadoRotacionZ : (botMoviendo ? caminarRotacionZ : paradoRotacionZ);
+                let targetX = botAgachado ? agachadoRotacionX : (botMoviendo ? caminarRotacionX : paradoRotacionX);
+                let targetY = botAgachado ? agachadoRotacionY : (botMoviendo ? caminarRotacionY : paradoRotacionY);
+                let targetZ = botAgachado ? agachadoRotacionZ : (botMoviendo ? caminarRotacionZ : paradoRotacionZ);
                 botContenedor.rotation.x += (targetX - botContenedor.rotation.x) * 10 * dt;
                 botContenedor.rotation.y += (targetY - botContenedor.rotation.y) * 10 * dt;
                 botContenedor.rotation.z += (targetZ - botContenedor.rotation.z) * 10 * dt;
             }
-        } else {
+        } else if (modoMultijugador) {
             // MODO MULTIJUGADOR: Actualizar distancia al oponente más cercano
             if (typeof jugadoresRemotos !== 'undefined' && jugadoresRemotos.size > 0) {
                 let minDist = 999;
@@ -1017,7 +1070,6 @@ function initControlesTactiles() {
 // Nueva función unificada para cambiar de cámara (Fase 3)
 function toggleTerceraPersona() {
     terceraPersona = !terceraPersona;
-    yaw += Math.PI;
 
     // Mostrar/ocultar modelo del jugador
     if (jugadorObj) {

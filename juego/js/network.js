@@ -318,15 +318,26 @@ function iniciarPartida(callback) {
 function enviarPosicion(x, y, z, rotY, animacion) {
     if (!socket?.connected || !modoMultijugador) return;
 
-    socket.emit('jugador:mover', { x, y, z, rotY, animacion });
+    // Optimización Fase 2: Reducir precisión para ahorrar ancho de banda (JSON más corto)
+    socket.emit('jugador:mover', {
+        x: Number(x.toFixed(3)),
+        y: Number(y.toFixed(3)),
+        z: Number(z.toFixed(3)),
+        rotY: Number(rotY.toFixed(3)),
+        animacion
+    });
 }
 
 function enviarDisparo(origenX, origenY, origenZ, direccionX, direccionY, direccionZ) {
     if (!socket?.connected || !modoMultijugador) return;
 
     socket.emit('jugador:disparar', {
-        origenX, origenY, origenZ,
-        direccionX, direccionY, direccionZ,
+        origenX: Number(origenX.toFixed(3)),
+        origenY: Number(origenY.toFixed(3)),
+        origenZ: Number(origenZ.toFixed(3)),
+        direccionX: Number(direccionX.toFixed(3)),
+        direccionY: Number(direccionY.toFixed(3)),
+        direccionZ: Number(direccionZ.toFixed(3)),
         timestamp: Date.now()
     });
 }
@@ -368,6 +379,8 @@ function crearJugadorRemoto(data) {
     // Luz de identificación
     const luz = new THREE.PointLight(0x00ff00, 1, 5);
     luz.position.set(0, 2, 0);
+    luz.matrixAutoUpdate = false; // Optimización menor
+    luz.updateMatrix();
     contenedor.add(luz);
 
     if (typeof escena !== 'undefined') escena.add(contenedor);
@@ -375,6 +388,7 @@ function crearJugadorRemoto(data) {
     const infoJugador = {
         id: data.id,
         contenedor: contenedor,
+        luz: luz, // Guardar referencia para gestión dinámica (Fase 3)
         modelo: null,
         mixer: null,
         animaciones: { caminar: null, parado: null, agachado: null, disparar: null },
@@ -416,6 +430,11 @@ function crearJugadorRemoto(data) {
                     } else if (child.material) {
                         applyTex(child.material);
                     }
+                }
+                const n = child.name.toLowerCase();
+                if (n.includes('tmpqebahx5v') || n.includes('.obj') || n.includes('gun') || n.includes('weapon')) {
+                    infoJugador.armaObj = child;
+                    child.visible = false;
                 }
                 if (child.isLight) lightsToRemove.push(child);
             });
@@ -472,14 +491,48 @@ function actualizarJugadorRemoto(data) {
     jugador.posicionObjetivo.set(data.x, 0, data.z);
     jugador.rotacionObjetivo = data.rotY;
 
+    // Toggle visibilidad del arma remota
+    if (jugador.armaObj) {
+        const moviendo = data.animacion === 'caminar';
+        const agachado = data.animacion === 'agachado';
+        jugador.armaObj.visible = moviendo && !agachado;
+    }
+
     // Gestionar Animaciones
     if (data.animacion && jugador.animacionActual !== data.animacion) {
         const vieja = jugador.animaciones[jugador.animacionActual];
         const nueva = jugador.animaciones[data.animacion];
 
         if (nueva) {
-            if (vieja) vieja.fadeOut(0.2);
-            nueva.reset().fadeIn(0.2).play();
+            if (vieja) {
+                const clipVieja = vieja.getClip();
+                const nombreLower = clipVieja.name.toLowerCase();
+                const esArma = nombreLower.includes('tmpqebahx5v') || nombreLower.includes('.obj') || nombreLower.includes('gun') || nombreLower.includes('weapon');
+
+                // Si es un track de arma y no se está moviendo (o está agachado), stop inmediato
+                const moviendo = data.animacion === 'caminar';
+                const agachado = data.animacion === 'agachado';
+
+                if (esArma && (!moviendo || agachado)) {
+                    vieja.stop();
+                } else {
+                    vieja.fadeOut(0.2);
+                }
+            }
+
+            const clipNueva = nueva.getClip();
+            const nombreLowerNueva = clipNueva.name.toLowerCase();
+            const esArmaNueva = nombreLowerNueva.includes('tmpqebahx5v') || nombreLowerNueva.includes('.obj') || nombreLowerNueva.includes('gun') || nombreLowerNueva.includes('weapon');
+
+            const moviendoNueva = data.animacion === 'caminar';
+            const agachadoNueva = data.animacion === 'agachado';
+
+            if (esArmaNueva && (!moviendoNueva || agachadoNueva)) {
+                nueva.stop();
+            } else {
+                nueva.reset().fadeIn(0.2).play();
+            }
+
             jugador.animacionActual = data.animacion;
         }
     }
@@ -529,6 +582,13 @@ function actualizarJugadoresRemotos(deltaTime) {
         const shortDist = 2 * da % max - da;
 
         jugador.contenedor.rotation.y += shortDist * SUAVIZADO * deltaTime;
+
+        // Optimización Fase 3: Gestión dinámica de luces
+        // Solo activar luz si el jugador está en un radio de 20 metros
+        if (jugador.luz) {
+            const distSq = jugador.contenedor.position.distanceToSquared(camara.position);
+            jugador.luz.visible = distSq < 400; // 20 * 20
+        }
 
         // Update Mixer
         if (jugador.mixer) {
@@ -630,6 +690,11 @@ function reproducirAnimacionDisparoRemoto(jugadorRemoto) {
         if (a) a.setEffectiveWeight(0.1);
     });
 
+    // Mostrar arma durante disparo
+    if (jugadorRemoto.armaObj) {
+        jugadorRemoto.armaObj.visible = true;
+    }
+
     // Reproducir animación de disparo
     const disparoAction = jugadorRemoto.animaciones.disparar;
     disparoAction.stop();
@@ -648,6 +713,13 @@ function reproducirAnimacionDisparoRemoto(jugadorRemoto) {
 
         if (disparoAction) {
             disparoAction.fadeOut(0.2);
+        }
+
+        // Restaurar visibilidad según estado
+        if (jugadorRemoto.armaObj) {
+            const moviendo = jugadorRemoto.animacionActual === 'caminar';
+            const agachado = jugadorRemoto.animacionActual === 'agachado';
+            jugadorRemoto.armaObj.visible = moviendo && !agachado;
         }
     }, 450);
 }

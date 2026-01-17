@@ -19,7 +19,7 @@
     <!-- Scanline Effect -->
     <div class="bg-scanline"></div>
 
-    <!-- Pantalla de Carga -->
+    <!-- Pantalla de Carga Inicial -->
     <div id="loading-screen"
         class="fixed inset-0 bg-black z-[100] flex flex-col items-center justify-center transition-opacity duration-1000">
         <div class="relative mb-12 animate-float">
@@ -39,6 +39,42 @@
                 <span id="progress-text" class="text-zinc-500">Iniciando sistemas...</span>
                 <span class="text-blue-500">Sium Tech Ops</span>
             </div>
+        </div>
+    </div>
+
+    <!-- Pantalla de Carga de Match (Antes de iniciar partida) -->
+    <div id="match-loading-screen"
+        class="hidden fixed inset-0 bg-black/95 z-[90] flex flex-col items-center justify-center backdrop-blur-md transition-opacity duration-500">
+        <div class="bg-grid opacity-20"></div>
+
+        <div class="relative mb-8 text-center">
+            <div class="text-blue-500 font-black text-xs uppercase tracking-[0.5em] mb-4 animate-pulse">Sincronizando
+                Realidad</div>
+            <h2 class="text-5xl font-black text-white italic tracking-tighter uppercase mb-2">PREPARANDO ARENA</h2>
+            <p id="match-loading-subtext" class="text-zinc-500 font-mono text-[10px] uppercase tracking-widest">Cargando
+                Operativos Seleccionados...</p>
+        </div>
+
+        <div class="w-80 flex flex-col items-center">
+            <div class="w-full h-1 bg-zinc-900 overflow-hidden relative border border-white/5">
+                <div id="match-progress-bar"
+                    class="h-full bg-blue-600 transition-all duration-300 shadow-[0_0_10px_rgba(37,99,235,0.5)]"
+                    style="width: 0%"></div>
+                <!-- Efecto de brillo que recorre la barra -->
+                <div
+                    class="absolute top-0 left-0 h-full w-20 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-scanline-fast">
+                </div>
+            </div>
+            <div class="flex justify-between w-full mt-2 uppercase font-black text-[8px] tracking-[0.2em]">
+                <span class="text-blue-400">Modelos 3D</span>
+                <span id="match-progress-percent" class="text-zinc-400">0%</span>
+            </div>
+        </div>
+
+        <div class="mt-12 flex gap-4">
+            <div class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+            <div class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+            <div class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"></div>
         </div>
     </div>
 

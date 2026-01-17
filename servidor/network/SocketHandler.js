@@ -199,15 +199,18 @@ class SocketHandler {
                 if (atacante.salaId !== victima.salaId) return; // Deben estar en la misma sala
                 if (!victima.vivo) return; // Ya está muerto
 
-                // Validación básica de distancia (anti-cheat simple)
+                // ========================================
+                // CB-20: VALIDACIÓN DE DISTANCIA OPTIMIZADA
+                // ========================================
+                // Usar distancia al cuadrado para evitar Math.sqrt()
                 const dx = atacante.x - victima.x;
                 const dz = atacante.z - victima.z;
-                const distancia = Math.sqrt(dx * dx + dz * dz);
+                const distanciaSq = dx * dx + dz * dz;
 
-                // Distancia máxima de disparo válido
-                const DISTANCIA_MAX = 100;
-                if (distancia > DISTANCIA_MAX) {
-                    console.log(`⚠️ Impacto rechazado: distancia ${distancia.toFixed(1)} > ${DISTANCIA_MAX}`);
+                // Distancia máxima de disparo válido (100 unidades)
+                const DISTANCIA_MAX_SQ = 100 * 100; // 10000
+                if (distanciaSq > DISTANCIA_MAX_SQ) {
+                    console.log(`⚠️ Impacto rechazado: distancia² ${distanciaSq.toFixed(0)} > ${DISTANCIA_MAX_SQ}`);
                     return;
                 }
 

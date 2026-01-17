@@ -97,6 +97,51 @@ var assetsLoader = {
 };
 
 // ========================================
+// TRACKER DE CARGA DE PARTIDA (MODELOS)
+// ========================================
+var matchLoadingTracker = {
+    total: 0,
+    loaded: 0,
+    isActive: false,
+
+    start: function (total) {
+        this.total = total;
+        this.loaded = 0;
+        this.isActive = true;
+        this.updateUI();
+        document.getElementById('match-loading-screen').classList.remove('hidden');
+    },
+
+    track: function () {
+        if (!this.isActive) return;
+        this.loaded++;
+        this.updateUI();
+        if (this.loaded >= this.total) {
+            this.complete();
+        }
+    },
+
+    updateUI: function () {
+        const percent = this.total > 0 ? Math.round((this.loaded / this.total) * 100) : 0;
+        const bar = document.getElementById('match-progress-bar');
+        const text = document.getElementById('match-progress-percent');
+        if (bar) bar.style.width = percent + '%';
+        if (text) text.textContent = percent + '%';
+    },
+
+    complete: function () {
+        this.isActive = false;
+        setTimeout(() => {
+            document.getElementById('match-loading-screen').classList.add('opacity-0');
+            setTimeout(() => {
+                document.getElementById('match-loading-screen').classList.add('hidden');
+                document.getElementById('match-loading-screen').classList.remove('opacity-0');
+            }, 600);
+        }, 500);
+    }
+};
+
+// ========================================
 // FUNCIONES DE CARGA TRACKED
 // ========================================
 
@@ -157,3 +202,34 @@ function cargarFBX(url, onLoad) {
         }
     );
 }
+
+// ========================================
+// VERSIÓN PROMISE PARA CARGA PARALELA (CB-01)
+// ========================================
+function cargarFBXPromise(url) {
+    return new Promise((resolve, reject) => {
+        assetsLoader.track();
+        const loader = new THREE.FBXLoader();
+
+        const basePath = url.substring(0, url.lastIndexOf('/') + 1);
+        loader.setPath(basePath);
+        loader.setResourcePath(basePath);
+
+        const fileName = url.split('/').pop();
+
+        loader.load(fileName,
+            (object) => {
+                console.log('FBX cargado (Promise):', url);
+                assetsLoader.loaded(url.split('/').pop());
+                resolve(object);
+            },
+            undefined,
+            (error) => {
+                console.error('Error cargando FBX (Promise):', url, error);
+                assetsLoader.loaded(url.split('/').pop() + ' (error)');
+                reject(error);
+            }
+        );
+    });
+}
+

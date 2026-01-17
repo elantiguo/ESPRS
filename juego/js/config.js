@@ -180,6 +180,12 @@ var _lastUIUpdate = 0;          // Último tiempo de actualización de UI
 var _uiThrottleMs = 100;        // Actualizar UI cada 100ms (no cada frame)
 var _lastRelojValue = -1;       // Cache del valor del reloj
 
+// --- Ticks de Lógica e IA (Fase 1) ---
+var _lastLogicUpdate = 0;       // Último tiempo de actualización de lógica
+var _logicTickMs = 100;         // Frecuencia de actualización (10Hz)
+var _botTargetPos = { x: 0, z: 0 }; // Posición objetivo calculada por la IA
+var _botTargetRot = 0;          // Rotación objetivo calculada por la IA
+
 // ========================================
 // POOL DE VECTORES REUTILIZABLES (Optimización)
 // ========================================

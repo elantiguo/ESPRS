@@ -248,35 +248,57 @@ class BotTactico {
     // ========================================
 
     tieneLineaDeVision(botPos, jugadorPos, laberintoRef, dimension, escala) {
-        const offset = (dimension * escala) / 2;
+        // --- Uso de Caché Global (Fase 1) ---
+        if (typeof gameCache !== 'undefined' && gameCache) {
+            const cachedValue = gameCache.getVision(botPos.x, botPos.z, jugadorPos.x, jugadorPos.z);
+            if (cachedValue !== null) return cachedValue;
+        }
 
         const dx = jugadorPos.x - botPos.x;
         const dz = jugadorPos.z - botPos.z;
-        const distancia = Math.sqrt(dx * dx + dz * dz);
+        const distanciaSq = dx * dx + dz * dz;
+        const distancia = Math.sqrt(distanciaSq);
 
         if (distancia > this.rangoVision) {
-            return { visible: false, distancia: distancia };
+            const res = { visible: false, distancia: distancia };
+            if (typeof gameCache !== 'undefined' && gameCache) gameCache.setVision(botPos.x, botPos.z, jugadorPos.x, jugadorPos.z, res);
+            return res;
         }
 
+        // Si están muy cerca, asumir visión directa (optimización)
+        if (distancia < 2) {
+            const res = { visible: true, distancia: distancia };
+            if (typeof gameCache !== 'undefined' && gameCache) gameCache.setVision(botPos.x, botPos.z, jugadorPos.x, jugadorPos.z, res);
+            return res;
+        }
+
+        const offset = (dimension * escala) / 2;
         const dirX = dx / distancia;
         const dirZ = dz / distancia;
-        const pasoSize = escala * 0.4;
+
+        // Paso más inteligente: escala * 0.5 (mitad de un bloque)
+        const pasoSize = escala * 0.5;
         const pasos = Math.ceil(distancia / pasoSize);
 
         for (let i = 1; i < pasos; i++) {
-            const checkX = botPos.x + dirX * (i * pasoSize);
-            const checkZ = botPos.z + dirZ * (i * pasoSize);
+            const distCheck = i * pasoSize;
+            const checkX = botPos.x + dirX * distCheck;
+            const checkZ = botPos.z + dirZ * distCheck;
 
             const gx = Math.round((checkX + offset) / escala);
             const gz = Math.round((checkZ + offset) / escala);
 
             const tile = laberintoRef[gz]?.[gx];
-            if (tile === 1) {
-                return { visible: false, distancia: distancia };
+            if (tile === 1) { // Pared
+                const res = { visible: false, distancia: distancia };
+                if (typeof gameCache !== 'undefined' && gameCache) gameCache.setVision(botPos.x, botPos.z, jugadorPos.x, jugadorPos.z, res);
+                return res;
             }
         }
 
-        return { visible: true, distancia: distancia };
+        const res = { visible: true, distancia: distancia };
+        if (typeof gameCache !== 'undefined' && gameCache) gameCache.setVision(botPos.x, botPos.z, jugadorPos.x, jugadorPos.z, res);
+        return res;
     }
 
     // ========================================

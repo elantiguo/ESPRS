@@ -2,6 +2,65 @@
 // PATHFINDING A* PARA BOT INTELIGENTE
 // ====================================
 
+// ========================================
+// CB-13: MIN HEAP PARA PRIORITY QUEUE
+// ========================================
+// Implementación de heap binario para O(log n) en lugar de O(n log n)
+class MinHeap {
+    constructor() {
+        this.heap = [];
+    }
+
+    push(node) {
+        this.heap.push(node);
+        this.bubbleUp(this.heap.length - 1);
+    }
+
+    pop() {
+        if (this.heap.length === 0) return null;
+        if (this.heap.length === 1) return this.heap.pop();
+
+        const min = this.heap[0];
+        this.heap[0] = this.heap.pop();
+        this.bubbleDown(0);
+        return min;
+    }
+
+    bubbleUp(index) {
+        while (index > 0) {
+            const parentIndex = Math.floor((index - 1) / 2);
+            if (this.heap[index].f >= this.heap[parentIndex].f) break;
+
+            [this.heap[index], this.heap[parentIndex]] = [this.heap[parentIndex], this.heap[index]];
+            index = parentIndex;
+        }
+    }
+
+    bubbleDown(index) {
+        while (true) {
+            let minIndex = index;
+            const leftChild = 2 * index + 1;
+            const rightChild = 2 * index + 2;
+
+            if (leftChild < this.heap.length && this.heap[leftChild].f < this.heap[minIndex].f) {
+                minIndex = leftChild;
+            }
+            if (rightChild < this.heap.length && this.heap[rightChild].f < this.heap[minIndex].f) {
+                minIndex = rightChild;
+            }
+
+            if (minIndex === index) break;
+
+            [this.heap[index], this.heap[minIndex]] = [this.heap[minIndex], this.heap[index]];
+            index = minIndex;
+        }
+    }
+
+    get length() {
+        return this.heap.length;
+    }
+}
+
 class Nodo {
     constructor(x, y, g = 0, h = 0, padre = null) {
         this.x = x;
@@ -130,22 +189,29 @@ class Pathfinder {
             }
         }
 
-        // Inicializar A*
-        const abiertos = [];
+        // ========================================
+        // CB-13: USAR MIN HEAP EN LUGAR DE ARRAY.SORT()
+        // ========================================
+        // Inicializar A* con priority queue
+        const abiertos = new MinHeap();
         const cerrados = new Set();
 
         const nodoInicio = new Nodo(inicio.x, inicio.y, 0, this.heuristica(inicio, destino));
         abiertos.push(nodoInicio);
 
+        // ========================================
+        // CB-12: LIMITAR ITERACIONES A* PARA EVITAR LAG SPIKES
+        // ========================================
+        // Reducir de 1000 a 250 iteraciones máximas
+        // Esto previene que el A* bloquee el frame por demasiado tiempo
         let iteraciones = 0;
-        const maxIteraciones = 1000; // Límite para evitar loops infinitos
+        const maxIteraciones = 250;
 
         while (abiertos.length > 0 && iteraciones < maxIteraciones) {
             iteraciones++;
 
-            // Encontrar nodo con menor f
-            abiertos.sort((a, b) => a.f - b.f);
-            const actual = abiertos.shift();
+            // CB-13: Extraer nodo con menor f usando heap (O(log n))
+            const actual = abiertos.pop();
 
             // ¿Llegamos al destino?
             if (actual.x === destino.x && actual.y === destino.y) {
@@ -168,17 +234,9 @@ class Pathfinder {
                 const h = this.heuristica(vecino, destino);
                 const nuevoNodo = new Nodo(vecino.x, vecino.y, g, h, actual);
 
-                // ¿Ya está en abiertos con mejor costo?
-                const existente = abiertos.find(n => n.x === vecino.x && n.y === vecino.y);
-                if (existente) {
-                    if (g < existente.g) {
-                        existente.g = g;
-                        existente.f = g + existente.h;
-                        existente.padre = actual;
-                    }
-                } else {
-                    abiertos.push(nuevoNodo);
-                }
+                // CB-13: Simplemente agregar al heap
+                // El heap mantendrá el orden automáticamente
+                abiertos.push(nuevoNodo);
             }
         }
 

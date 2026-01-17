@@ -462,21 +462,37 @@ function configurarCallbacksLobby() {
             }
         }
 
-        cerrarLobby();
-        // Ocultar menú y mostrar HUD
-        document.getElementById('overlay').classList.add('hidden');
-        document.getElementById('hud-juego').classList.remove('hidden');
+        // Ocultar menú y mostrar HUD (Pero esperar a los modelos)
+        const iniciarFlow = async () => {
+            // Mostrar pantalla de carga de match
+            document.getElementById('match-loading-screen').classList.remove('hidden');
 
-        // Detener música de menú
-        if (typeof detenerMusicaMenu === 'function') {
-            detenerMusicaMenu();
-        }
+            // Esperar a que los modelos se carguen
+            try {
+                if (typeof actualizarModelosPersonajes === 'function') {
+                    await actualizarModelosPersonajes();
+                }
+            } catch (e) {
+                console.error("Error cargando modelos en multijugador:", e);
+            }
 
-        // Iniciar cinemática
-        if (typeof iniciarCinematica === 'function') {
-            renderizador.domElement.requestPointerLock();
-            iniciarCinematica();
-        }
+            // Ocultar overlay
+            document.getElementById('overlay').classList.add('hidden');
+            document.getElementById('hud-juego').classList.remove('hidden');
+
+            // Detener música de menú
+            if (typeof detenerMusicaMenu === 'function') {
+                detenerMusicaMenu();
+            }
+
+            // Iniciar cinemática
+            if (typeof iniciarCinematica === 'function') {
+                renderizador.domElement.requestPointerLock();
+                iniciarCinematica();
+            }
+        };
+
+        iniciarFlow();
     };
 }
 
