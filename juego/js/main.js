@@ -15,6 +15,9 @@ function init() {
     // Inicializar pool de vectores reutilizables
     initVectorPool();
 
+    // Detección de dispositivo táctil
+    detectarDispositivoTactil();
+
     // Inicializar sistema de caché avanzado
     inicializarGameCache();
 
@@ -42,17 +45,7 @@ function init() {
         // Toggle tercera persona con Alt
         if (e.code === 'AltLeft' || e.code === 'AltRight') {
             e.preventDefault(); // Evitar que Alt abra menú del navegador
-            terceraPersona = !terceraPersona;
-            yaw += Math.PI;
-
-            // Mostrar/ocultar modelo del jugador (el arma se maneja en el bucle)
-            if (jugadorObj) {
-                jugadorObj.visible = terceraPersona;
-            }
-            // Ocultar arma inmediatamente al cambiar a tercera persona
-            if (grupoArma && terceraPersona) {
-                grupoArma.visible = false;
-            }
+            toggleTerceraPersona();
         }
 
         // Resume with Escape
@@ -66,6 +59,9 @@ function init() {
     document.addEventListener('mousemove', manejarMouse);
     document.addEventListener('mousedown', () => { if (activo) disparar(1); });
     window.addEventListener('resize', onResize);
+
+    // Inicializar controles táctiles (Fase 2)
+    initControlesTactiles();
 
     // Detección de Pausa (Pointer Lock)
     document.addEventListener('pointerlockchange', () => {
@@ -177,6 +173,11 @@ function finalizarCinematica() {
 
     reloj.start();
     actualizarUI();
+
+    // Mostrar controles táctiles SI es dispositivo táctil (Fase 3) - Después de la animación
+    if (esDispositivoTactil) {
+        document.getElementById('controles-tactiles').classList.remove('hidden');
+    }
 }
 
 function reiniciarSimulacion() {
@@ -346,7 +347,7 @@ function bucle(tiempo) {
 
     if (activo) {
         // --- LÓGICA DE AGACHARSE (CROUCH) ---
-        let quiereAgacharse = teclas['ShiftLeft'] || teclas['ShiftRight'];
+        let quiereAgacharse = teclas['ShiftLeft'] || teclas['ShiftRight'] || teclas['KeyC'];
 
         // Verificar si estamos bajo un hueco (Tile 2) - usar posicionJugador con radio
         let bajoHueco = false;
@@ -393,6 +394,13 @@ function bucle(tiempo) {
         if (teclas['KeyS']) { _vecNextPos.addScaledVector(_vecForward, -vel); moviendo = true; }
         if (teclas['KeyA']) { _vecNextPos.addScaledVector(_vecRight, vel); moviendo = true; }
         if (teclas['KeyD']) { _vecNextPos.addScaledVector(_vecRight, -vel); moviendo = true; }
+
+        // Joystick (Fase 2)
+        if (joystickVector.x !== 0 || joystickVector.y !== 0) {
+            _vecNextPos.addScaledVector(_vecForward, vel * joystickVector.y);
+            _vecNextPos.addScaledVector(_vecRight, -vel * joystickVector.x);
+            moviendo = true;
+        }
 
         // Pasamos estado 'agachado' a la colisión con RADIO_JUGADOR
         // Mover X independiente (permite deslizarse por paredes)
@@ -792,6 +800,233 @@ function bucle(tiempo) {
     }
 
     renderizador.render(escena, camara);
+}
+
+// ========================================
+// SISTEMA DE CONTROLES TÁCTILES (Fase 2)
+// ========================================
+function detectarDispositivoTactil() {
+    // Solo registrar si es táctil, la visibilidad se maneja en iniciarJuego
+    return esDispositivoTactil;
+}
+
+function initControlesTactiles() {
+    const container = document.getElementById('joystick-container');
+    const base = document.getElementById('joystick-base');
+    const palanca = document.getElementById('joystick-palanca');
+
+    if (!container || !base || !palanca) return;
+
+    let rect, centerX, centerY;
+    const maxDistance = 50;
+    let joystickTouchId = null;
+
+    function handleStart(e) {
+        const touch = e.changedTouches ? e.changedTouches[0] : e;
+        if (e.changedTouches) joystickTouchId = touch.identifier;
+
+        joystickActivo = true;
+        rect = base.getBoundingClientRect();
+        centerX = rect.left + rect.width / 2;
+        centerY = rect.top + rect.height / 2;
+        updateJoystickVisual(touch.clientX, touch.clientY);
+    }
+
+    function handleMove(e) {
+        if (!joystickActivo) return;
+
+        let touch = null;
+        if (e.touches) {
+            for (let i = 0; i < e.touches.length; i++) {
+                if (e.touches[i].identifier === joystickTouchId) {
+                    touch = e.touches[i];
+                    break;
+                }
+            }
+        } else {
+            touch = e;
+        }
+
+        if (touch) {
+            updateJoystickVisual(touch.clientX, touch.clientY);
+        }
+    }
+
+    function updateJoystickVisual(clientX, clientY) {
+        let dx = clientX - centerX;
+        let dy = clientY - centerY;
+
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        let angle = Math.atan2(dy, dx);
+
+        if (distance > maxDistance) {
+            dx = Math.cos(angle) * maxDistance;
+            dy = Math.sin(angle) * maxDistance;
+            distance = maxDistance;
+        }
+
+        // Actualizar visual de la palanca
+        palanca.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+        // Normalizar valores para el movimiento del jugador (-1 a 1)
+        joystickVector.x = dx / maxDistance;
+        joystickVector.y = -dy / maxDistance;
+    }
+
+    function handleEnd(e) {
+        if (e.changedTouches) {
+            let found = false;
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === joystickTouchId) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return;
+        }
+
+        joystickActivo = false;
+        joystickTouchId = null;
+        joystickVector.x = 0;
+        joystickVector.y = 0;
+        palanca.style.transform = `translate(-50%, -50%)`;
+    }
+
+    container.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation(); // Evitar que la cámara detecte este toque
+        handleStart(e);
+    }, { passive: false });
+    window.addEventListener('touchmove', handleMove, { passive: false });
+    window.addEventListener('touchend', handleEnd);
+    window.addEventListener('touchcancel', handleEnd);
+
+    // --- Botones de Acción (Fase 3) ---
+    const btnDisparar = document.getElementById('btn-disparar');
+    const btnAgacharse = document.getElementById('btn-agacharse');
+
+    if (btnDisparar) {
+        btnDisparar.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            e.stopPropagation(); // Evitar giro de cámara al disparar
+            if (activo) disparar(1);
+        }, { passive: false });
+        // Mouse support for testing
+        btnDisparar.addEventListener('mousedown', (e) => {
+            if (activo) disparar(1);
+        });
+    }
+
+    if (btnAgacharse) {
+        btnAgacharse.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            e.stopPropagation(); // Evitar giro de cámara al agacharse
+            teclas['KeyC'] = true;
+        }, { passive: false });
+        btnAgacharse.addEventListener('touchend', (e) => {
+            teclas['KeyC'] = false;
+        });
+        // Mouse support for testing
+        btnAgacharse.addEventListener('mousedown', () => teclas['KeyC'] = true);
+        btnAgacharse.addEventListener('mouseup', () => teclas['KeyC'] = false);
+    }
+
+    const btnCamara = document.getElementById('btn-camara');
+    if (btnCamara) {
+        btnCamara.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            e.stopPropagation(); // Evitar giro de cámara al cambiar vista
+            toggleTerceraPersona();
+        }, { passive: false });
+        // Mouse support for testing
+        btnCamara.addEventListener('mousedown', (e) => {
+            toggleTerceraPersona();
+        });
+    }
+
+    // --- Rotación de Cámara por Swipe (Fase 3) ---
+    let lastTouchX = 0;
+    let lastTouchY = 0;
+    let cameraTouchId = null;
+    // Sensibilidad adaptativa según DPI para respuesta uniforme (Aumentada significativamente)
+    const baseSensitivity = sensiblidad * 10;
+    const swipeSensitivity = baseSensitivity / (window.devicePixelRatio || 1);
+
+    window.addEventListener('touchstart', (e) => {
+        if (!activo || enCinematica || cameraTouchId !== null) return;
+
+        // El primer toque que llegue aquí (no filtrado por botones/joystick)
+        // será el que controle la cámara
+        const touch = e.changedTouches[0];
+        cameraTouchId = touch.identifier;
+        lastTouchX = touch.clientX;
+        lastTouchY = touch.clientY;
+    }, { passive: false });
+
+    window.addEventListener('touchmove', (e) => {
+        if (!activo || enCinematica || cameraTouchId === null) return;
+
+        let touch = null;
+        for (let i = 0; i < e.touches.length; i++) {
+            if (e.touches[i].identifier === cameraTouchId) {
+                touch = e.touches[i];
+                break;
+            }
+        }
+
+        if (touch) {
+            const touchX = touch.clientX;
+            const touchY = touch.clientY;
+
+            const movementX = touchX - lastTouchX;
+            const movementY = touchY - lastTouchY;
+
+            yaw -= movementX * swipeSensitivity;
+            pitch -= movementY * swipeSensitivity;
+            pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitch));
+
+            lastTouchX = touchX;
+            lastTouchY = touchY;
+        }
+    }, { passive: false });
+
+    window.addEventListener('touchend', (e) => {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            if (e.changedTouches[i].identifier === cameraTouchId) {
+                cameraTouchId = null;
+                break;
+            }
+        }
+    });
+
+    window.addEventListener('touchcancel', (e) => {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            if (e.changedTouches[i].identifier === cameraTouchId) {
+                cameraTouchId = null;
+                break;
+            }
+        }
+    });
+
+    // Mouse support for testing on PC (optional)
+    container.addEventListener('mousedown', handleStart);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleEnd);
+}
+
+// Nueva función unificada para cambiar de cámara (Fase 3)
+function toggleTerceraPersona() {
+    terceraPersona = !terceraPersona;
+    yaw += Math.PI;
+
+    // Mostrar/ocultar modelo del jugador
+    if (jugadorObj) {
+        jugadorObj.visible = terceraPersona;
+    }
+    // Ocultar arma inmediatamente al cambiar a tercera persona
+    if (grupoArma && terceraPersona) {
+        grupoArma.visible = false;
+    }
 }
 
 init();

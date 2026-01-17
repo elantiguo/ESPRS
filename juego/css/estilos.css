@@ -97,6 +97,140 @@ canvas {
 }
 
 /* ========================================
+   TOUCH CONTROLS (Fase 2)
+======================================== */
+#controles-tactiles {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 50;
+}
+
+#controles-tactiles .hidden {
+    display: none;
+}
+
+#joystick-container {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    width: 150px;
+    height: 150px;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+}
+
+#joystick-base {
+    width: 120px;
+    height: 120px;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    position: relative;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.3);
+}
+
+#joystick-palanca {
+    width: 50px;
+    height: 50px;
+    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    pointer-events: none;
+}
+
+#botones-accion {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    pointer-events: auto;
+    align-items: flex-end;
+}
+
+.botones-fila {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.btn-tactil-circular {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: none;
+    transition: transform 0.1s, background 0.1s;
+}
+
+.btn-tactil-circular:active {
+    transform: scale(0.9);
+    background: rgba(255, 255, 255, 0.15);
+}
+
+#btn-disparar {
+    width: 100px;
+    height: 100px;
+    border-color: rgba(239, 68, 68, 0.3);
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+}
+
+#btn-disparar .icono-disparar {
+    width: 30px;
+    height: 30px;
+    background: #ef4444;
+    border-radius: 50%;
+    box-shadow: 0 0 15px #ef4444;
+}
+
+#btn-agacharse .icono-agacharse {
+    width: 24px;
+    height: 12px;
+    border: 3px solid white;
+    border-top: none;
+    border-radius: 0 0 12px 12px;
+    opacity: 0.7;
+}
+
+#btn-camara .icono-camara {
+    width: 28px;
+    height: 18px;
+    border: 2px solid white;
+    border-radius: 4px;
+    position: relative;
+    opacity: 0.8;
+}
+
+#btn-camara .icono-camara::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 8px;
+    height: 8px;
+    border: 2px solid white;
+    border-radius: 50%;
+}
+
+/* ========================================
    GLASSMORPHISM EFFECTS
 ======================================== */
 .glass {
@@ -917,7 +1051,17 @@ canvas {
         radial-gradient(ellipse at 90% 80%, rgba(255, 100, 0, 0.1) 0%, transparent 35%),
         rgba(5, 5, 10, 0.92);
     backdrop-filter: blur(4px);
+    overflow-y: auto;
+    padding: 20px 0;
+    align-items: center;
+    /* Mantener centrado horizontal */
 }
+
+#overlay>div {
+    margin-top: auto;
+    margin-bottom: auto;
+}
+
 
 /* Container for RGB animated lights */
 .particles-bg {
@@ -1011,9 +1155,18 @@ canvas {
 }
 
 /* ========================================
-   RESPONSIVE
+   RESPONSIVE DESIGN - SIUM DUEL
 ======================================== */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
+    .menu-logo {
+        font-size: clamp(48px, 8vw, 64px);
+    }
+
+    .selector-personajes-grid {
+        gap: 12px;
+        padding: 16px;
+    }
+
     .btn-personaje {
         flex: 0 0 140px;
     }
@@ -1021,8 +1174,397 @@ canvas {
     .visor-personaje {
         height: 160px;
     }
+}
+
+@media (max-width: 768px) {
+    #hud-juego {
+        padding: 1rem;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+
+    #hud-juego>div {
+        min-width: 130px;
+        padding: 0.5rem;
+    }
+
+    #reloj {
+        font-size: 2.2rem;
+    }
+
+    .menu-logo-container {
+        margin-bottom: 20px;
+    }
 
     .menu-logo {
-        font-size: 36px;
+        font-size: 42px;
+    }
+
+    .menu-subtitle {
+        font-size: 10px;
+        letter-spacing: 0.3em;
+    }
+
+    .btn-action-primary {
+        padding: 12px 24px;
+        font-size: 16px;
+    }
+
+    .btn-action-secondary {
+        padding: 10px 20px;
+        font-size: 12px;
+    }
+
+    .selector-container {
+        border-radius: 8px;
+    }
+
+    .btn-personaje {
+        flex: 0 0 130px;
+    }
+
+    .visor-personaje {
+        height: 140px;
+    }
+}
+
+@media (max-width: 768px) {
+    #hud-juego {
+        scale: 0.85;
+        transform-origin: top center;
+        padding: 1rem !important;
+    }
+
+    #pantalla-cinematica .p-12 {
+        padding: 1.5rem !important;
+    }
+
+    #contador-cinematica {
+        font-size: 4rem;
+    }
+
+    #pantalla-cinematica .text-xl {
+        font-size: 1.1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    #hud-juego {
+        scale: 1;
+        margin-top: 0;
+        padding: 5px 10px !important;
+        justify-content: space-between !important;
+        gap: 0 !important;
+        width: 100%;
+    }
+
+    #hud-juego>div {
+        min-width: 100px !important;
+        padding: 6px 10px !important;
+        scale: 0.7;
+    }
+
+    #hud-juego>div:first-child {
+        transform-origin: top left;
+    }
+
+    #hud-juego>div:last-child {
+        transform-origin: top right;
+    }
+
+    #hud-juego .text-center {
+        scale: 0.7;
+        transform-origin: top center;
+    }
+
+    #pantalla-cinematica .p-12 {
+        padding: 1rem !important;
+    }
+
+    #contador-cinematica {
+        font-size: 3rem;
+    }
+
+    #pantalla-cinematica .glass {
+        padding: 1rem !important;
+    }
+
+    #pantalla-cinematica h2 {
+        font-size: 8px !important;
+        letter-spacing: 0.2em !important;
+    }
+
+    #pantalla-cinematica h3 {
+        font-size: 0.9rem !important;
+    }
+
+    #pantalla-cinematica p {
+        font-size: 8px !important;
+    }
+
+    #pantalla-cinematica .max-w-sm {
+        max-width: 160px;
+    }
+
+
+    #rol-jugador {
+        font-size: 1rem;
+    }
+
+    .menu-logo-container {
+        margin-bottom: 25px;
+    }
+
+    .menu-logo {
+        font-size: clamp(36px, 12vw, 52px);
+    }
+
+    .menu-subtitle {
+        font-size: 10px;
+        display: block;
+        letter-spacing: 0.3em;
+        margin-top: 8px;
+    }
+
+    .menu-version {
+        position: absolute;
+        right: -70px;
+        top: -5px;
+        font-size: 7px;
+        padding: 4px 8px;
+    }
+
+    @media (max-width: 380px) {
+        .menu-version {
+            right: -10px;
+            top: -20px;
+        }
+    }
+
+
+    .btn-personaje {
+        flex: 0 0 110px;
+    }
+
+    .visor-personaje {
+        height: 120px;
+    }
+
+    .personaje-nombre {
+        font-size: 11px;
+    }
+
+    .menu-footer {
+        display: none;
+    }
+
+    #modal-controles .glass,
+    #modal-lobby .glass {
+        padding: 1.5rem;
+        width: 95%;
+    }
+
+    #modal-controles h2 {
+        font-size: 1.5rem;
+    }
+
+    #modal-controles .grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+}
+
+/* Vertical Height Optimization (Crucial for the user's issue) */
+@media (max-height: 750px) {
+    .flex.flex-col.gap-5 {
+        gap: 0.75rem !important;
+    }
+}
+
+@media (max-height: 720px) {
+    .menu-logo-container {
+        margin-bottom: 15px;
+    }
+
+    .menu-logo {
+        font-size: clamp(32px, 7vh, 60px);
+    }
+
+    .menu-subtitle {
+        font-size: 11px;
+        display: block;
+    }
+
+    .menu-version {
+        position: absolute;
+        right: -65px;
+        top: -5px;
+        font-size: 7px;
+        padding: 3px 7px;
+    }
+
+    .selector-container {
+        margin-bottom: 10px;
+    }
+
+    .selector-personajes-grid {
+        padding: 10px 15px;
+    }
+
+    .visor-personaje {
+        height: clamp(60px, 18vh, 150px);
+    }
+
+    .btn-action-primary {
+        padding: 10px 20px;
+        margin-bottom: 5px;
+    }
+
+    .btn-action-secondary {
+        padding: 8px 16px;
+    }
+
+    .menu-footer {
+        display: none;
+    }
+
+    #hud-juego {
+        scale: 1;
+        margin-top: 0;
+        padding: 10px 15px !important;
+        justify-content: space-between !important;
+        gap: 0 !important;
+        width: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+
+    #hud-juego>div {
+        padding: 8px 12px !important;
+        min-width: auto !important;
+        scale: 0.75;
+    }
+
+    /* Contenedor izquierdo (Vida) */
+    #hud-juego>div:first-child {
+        transform-origin: top left;
+    }
+
+    /* Contenedor derecho (Bot) */
+    #hud-juego>div:last-child {
+        transform-origin: top right;
+    }
+
+    /* Reloj central */
+    #hud-juego .text-center {
+        scale: 0.8;
+        transform-origin: top center;
+    }
+
+    #pantalla-cinematica .p-12 {
+        padding: 0.75rem !important;
+    }
+
+    #contador-cinematica {
+        font-size: 2.5rem;
+    }
+
+    #pantalla-cinematica .glass {
+        padding: 0.75rem !important;
+    }
+
+}
+
+@media (max-height: 500px) {
+    .menu-logo-container {
+        margin-bottom: 2px;
+    }
+
+    .menu-logo {
+        font-size: 24px;
+    }
+
+    .menu-subtitle {
+        font-size: 8px;
+        display: block;
+    }
+
+    .menu-version {
+        position: absolute;
+        right: -45px;
+        top: -10px;
+        font-size: 6px;
+        padding: 2px 5px;
+    }
+
+
+    .selector-container {
+        border-radius: 4px;
+    }
+
+    .btn-personaje {
+        flex: 0 0 100px;
+    }
+
+    .visor-personaje {
+        height: 80px;
+    }
+
+    .personaje-info {
+        padding: 8px;
+    }
+
+    .personaje-nombre {
+        font-size: 10px;
+    }
+
+    .personaje-tipo {
+        display: none;
+    }
+
+    #hud-juego {
+        scale: 1;
+        margin-top: 0;
+        padding: 5px 10px !important;
+        justify-content: space-between !important;
+        gap: 0 !important;
+        width: 100%;
+    }
+
+    #hud-juego>div {
+        padding: 5px 8px !important;
+        min-width: auto !important;
+        scale: 0.6;
+    }
+
+    #hud-juego>div:first-child {
+        transform-origin: top left;
+    }
+
+    #hud-juego>div:last-child {
+        transform-origin: top right;
+    }
+
+    #hud-juego .text-center {
+        scale: 0.65;
+        transform-origin: top center;
+    }
+
+    #pantalla-cinematica .p-12 {
+        padding: 0.5rem !important;
+    }
+
+    #contador-cinematica {
+        font-size: 2rem;
+    }
+
+    #pantalla-cinematica .glass {
+        padding: 0.5rem !important;
+    }
+
+    #pantalla-cinematica .max-w-sm {
+        max-width: 140px;
     }
 }

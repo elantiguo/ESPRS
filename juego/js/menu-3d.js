@@ -146,6 +146,23 @@ function animarVisores() {
     });
 }
 
+function actualizarVisoresMenu() {
+    Object.keys(visoresMenu).forEach(id => {
+        const v = visoresMenu[id];
+        const contenedor = document.getElementById('visor-' + id);
+        if (!contenedor || !v) return;
+
+        const w = contenedor.clientWidth;
+        const h = contenedor.clientHeight;
+
+        if (w > 0 && h > 0) {
+            v.camara.aspect = w / h;
+            v.camara.updateProjectionMatrix();
+            v.render.setSize(w, h);
+        }
+    });
+}
+
 // Inicializar cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
     // Esperar un poco a que Three.js y config estén disponibles

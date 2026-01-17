@@ -191,6 +191,13 @@ var _vecTarget = null;    // Posición objetivo para linterna
 var _vecCamOffset = null; // Offset de cámara en tercera persona
 var _vecJugador = null;   // Posición del jugador como Vector3
 
+// ========================================
+// SISTEMA TÁCTIL (Fase 2)
+// ========================================
+var esDispositivoTactil = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+var joystickActivo = false;
+var joystickVector = { x: 0, y: 0 }; // Vector de movimiento (-1 a 1)
+
 // Inicializar vectors (llamar después de que THREE.js cargue)
 function initVectorPool() {
     _vecForward = new THREE.Vector3();

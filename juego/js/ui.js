@@ -45,9 +45,12 @@ function finalizar(res) {
 
     overlay.classList.remove('hidden');
 
-    // Ocultar HUD del juego
+    // Ocultar HUD del juego y controles táctiles
     const hud = document.getElementById('hud-juego');
     if (hud) hud.classList.add('hidden');
+
+    const controlesTactiles = document.getElementById('controles-tactiles');
+    if (controlesTactiles) controlesTactiles.classList.add('hidden');
 
     // Limpiar pool de proyectiles
     if (projectilePool) projectilePool.clear();
@@ -63,9 +66,15 @@ function finalizar(res) {
 }
 
 function onResize() {
+    // 1. Actualizar cámara principal y renderizador
     camara.aspect = window.innerWidth / window.innerHeight;
     camara.updateProjectionMatrix();
     renderizador.setSize(window.innerWidth, window.innerHeight);
+
+    // 2. Actualizar visores del menú si están inicializados
+    if (typeof actualizarVisoresMenu === 'function') {
+        actualizarVisoresMenu();
+    }
 }
 
 // --- Gestión de Personajes ---
