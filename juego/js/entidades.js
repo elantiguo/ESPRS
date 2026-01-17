@@ -62,10 +62,10 @@ function crearArmaRespaldo() {
     grupoArma.add(cuerpo);
 }
 
-function spawnEntidades() {
+function spawnEntidades(customX = null, customZ = null) {
     const offset = (DIMENSION * ESCALA) / 2;
-    const posInicialX = 1 * ESCALA - offset;
-    const posInicialZ = 1 * ESCALA - offset;
+    const posInicialX = customX !== null ? customX : (1 * ESCALA - offset);
+    const posInicialZ = customZ !== null ? customZ : (1 * ESCALA - offset);
 
     camara.position.set(posInicialX, 2, posInicialZ);
 
@@ -99,6 +99,9 @@ function spawnEntidades() {
     // Asegurar que esté en la escena
     if (botObj.parent !== escena) escena.add(botObj);
     botObj.position.set((DIMENSION - 2) * ESCALA - offset, 0, (DIMENSION - 2) * ESCALA - offset);
+
+    // Si estamos en multijugador, el bot local no debe ser visible
+    botObj.visible = !modoMultijugador;
 
     // Cargar modelos iniciales
     cargarModelosPersonaje(idPersonajeSeleccionado);

@@ -1,7 +1,7 @@
 // --- Configuración Sium Engine ---
 var escena, camara, renderizador, reloj;
 var laberinto = [];
-const DIMENSION = 17;
+const DIMENSION = 9;
 const ESCALA = 6;
 var botObj, grupoArma;
 var cazadorId = 1;

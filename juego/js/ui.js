@@ -6,6 +6,12 @@ function actualizarUI() {
     const rol = document.getElementById('rol-jugador');
     const baseClasses = "text-2xl font-black italic tracking-tighter uppercase mr-4 transition-all duration-300 ";
 
+    if (modoMultijugador) {
+        rol.innerText = "⚔️ DUELO A MUERTE";
+        rol.className = baseClasses + "text-white animate-pulse";
+        return;
+    }
+
     if (cazadorId === 1) {
         rol.innerText = "🎯 ERES EL CAZADOR";
         rol.className = baseClasses + "text-yellow-400 animate-pulse scale-110";
@@ -428,7 +434,17 @@ function configurarCallbacksLobby() {
                 // Limpiar entidades anteriores primero
                 if (jugadorObj) escena.remove(jugadorObj);
                 if (botObj) escena.remove(botObj);
-                spawnEntidades();
+
+                // Encontrar mi posición asignada por el servidor
+                const miId = typeof obtenerMiId === 'function' ? obtenerMiId() : null;
+                const datosYo = data.sala.jugadores.find(j => j.id === miId);
+
+                if (datosYo) {
+                    console.log(`📍 Posición de spawn asignada: ${datosYo.x}, ${datosYo.z}`);
+                    spawnEntidades(datosYo.x, datosYo.z);
+                } else {
+                    spawnEntidades();
+                }
             }
         }
 

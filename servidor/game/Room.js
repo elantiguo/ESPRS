@@ -24,7 +24,8 @@ class Room {
             tiempoRonda: 120,    // segundos
             vidaInicial: 100,
             danoProyectil: 20,
-            dimensionMapa: 17    // Dimensión del laberinto
+            dimensionMapa: 9,   // Dimensión del laberinto
+            escalaMapa: 6        // Escala del mundo (debe coincidir con cliente)
         };
 
         // Estado del juego activo
@@ -115,10 +116,15 @@ class Room {
     }
 
     obtenerSpawns() {
-        // Posiciones de spawn opuestas
+        const DIMENSION = this.configuracion.dimensionMapa;
+        const ESCALA = this.configuracion.escalaMapa;
+        const offset = (DIMENSION * ESCALA) / 2;
+
+        // Posiciones de spawn en esquinas opuestas del laberinto
+        // (1,1) y (DIM-2, DIM-2) son pasillos garantizados por el algoritmo
         return [
-            { x: 10, z: 10 },
-            { x: -10, z: -10 }
+            { x: 1 * ESCALA - offset, z: 1 * ESCALA - offset },
+            { x: (DIMENSION - 2) * ESCALA - offset, z: (DIMENSION - 2) * ESCALA - offset }
         ];
     }
 

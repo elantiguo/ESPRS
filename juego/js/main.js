@@ -139,7 +139,7 @@ function iniciarCinematica() {
 
     // Hacer visibles los personajes para la cámara aérea
     if (jugadorObj) jugadorObj.visible = true;
-    if (botObj) botObj.visible = true;
+    if (botObj) botObj.visible = !modoMultijugador; // No mostrar bot en multijugador
 
     // Reiniciar reloj para la cinemática
     reloj.start();
@@ -281,18 +281,26 @@ function bucle(tiempo) {
 
                 const pNombre = personajesSium[idPersonajeSeleccionado].nombre;
                 document.getElementById('cine-nombre-p').innerText = `IDENTIFICANDO: ${pNombre}`;
-                document.getElementById('cine-nombre-b').innerText = `ESTADO: EN ESPERA`;
+                document.getElementById('cine-nombre-b').innerText = modoMultijugador ? `BUSCANDO RIVAL...` : `ESTADO: EN ESPERA`;
             } else {
-                // Siguientes 5 segundos: Identificar Bot
-                const target = botObj.position;
-                // Posición fija de cámara para ver al bot
-                camara.position.set(target.x - 4, 3, target.z - 4);
-                camara.lookAt(target.x, 1.5, target.z);
+                // Siguientes 5 segundos: Identificar Bot o Rival
+                let targetPos = botObj.position;
+                let targetNombre = "BOT TÁCTICO";
 
-                const bId = idPersonajeSeleccionado === 'agente' ? 'cill' : 'agente';
-                const bNombre = personajesSium[bId].nombre;
-                document.getElementById('cine-nombre-p').innerText = `OBJETIVO LOCALIZADO`;
-                document.getElementById('cine-nombre-b').innerText = `AMENAZA: ${bNombre}`;
+                if (modoMultijugador && typeof jugadoresRemotos !== 'undefined' && jugadoresRemotos.size > 0) {
+                    const rival = jugadoresRemotos.values().next().value;
+                    if (rival && rival.contenedor) {
+                        targetPos = rival.contenedor.position;
+                        targetNombre = (personajesSium[rival.personaje]?.nombre || "RIVAL").toUpperCase();
+                    }
+                }
+
+                // Posición fija de cámara para ver al objetivo
+                camara.position.set(targetPos.x - 4, 3, targetPos.z - 4);
+                camara.lookAt(targetPos.x, 1.5, targetPos.z);
+
+                document.getElementById('cine-nombre-p').innerText = modoMultijugador ? `RIVAL LOCALIZADO` : `OBJETIVO LOCALIZADO`;
+                document.getElementById('cine-nombre-b').innerText = `AMENAZA: ${targetNombre}`;
             }
 
             if (tiempoCinematica <= 0) {
@@ -634,158 +642,118 @@ function bucle(tiempo) {
         }
 
         // ============================================
-        // BOT IA TÁCTICA CON MOVIMIENTO NATURAL
+        // BOT IA TÁCTICA CON MOVIMIENTO NATURAL (Solo Single Player)
         // ============================================
-        // Usar posicionJugador en lugar de camara.position para soportar tercera persona
-        _vecJugador.set(posicionJugador.x, posicionJugador.y, posicionJugador.z);
-        const distBot = botObj.position.distanceTo(_vecJugador);
-        const botPos = { x: botObj.position.x, z: botObj.position.z };
-        const jugadorPos = { x: posicionJugador.x, z: posicionJugador.z };
-        const esCazador = cazadorId === 2;
+        if (!modoMultijugador) {
+            // Usar posicionJugador en lugar de camara.position para soportar tercera persona
+            _vecJugador.set(posicionJugador.x, posicionJugador.y, posicionJugador.z);
+            const distBot = botObj.position.distanceTo(_vecJugador);
+            const botPos = { x: botObj.position.x, z: botObj.position.z };
+            const jugadorPos = { x: posicionJugador.x, z: posicionJugador.z };
+            const esCazador = cazadorId === 2;
 
-        // Verificar línea de visión
-        const vision = botTactico.tieneLineaDeVision(
-            botPos, jugadorPos, laberinto, DIMENSION, ESCALA
-        );
+            // Verificar línea de visión
+            const vision = botTactico.tieneLineaDeVision(
+                botPos, jugadorPos, laberinto, DIMENSION, ESCALA
+            );
 
-        // Actualizar estado del bot (ahora con dt y laberinto para comportamientos avanzados)
-        const estado = botTactico.actualizarEstado(
-            botPos, jugadorPos, esCazador, vision.visible, distBot, dt, laberinto, DIMENSION, ESCALA
-        );
+            // Actualizar estado del bot
+            const estado = botTactico.actualizarEstado(
+                botPos, jugadorPos, esCazador, vision.visible, distBot, dt, laberinto, DIMENSION, ESCALA
+            );
 
-        // Mostrar información en HUD con nuevo formato
-        document.getElementById('distancia-bot').innerText =
-            `${distBot.toFixed(1)}m ${botTactico.getEstadoTexto()}`;
+            // Mostrar información en HUD
+            document.getElementById('distancia-bot').innerText =
+                `${distBot.toFixed(1)}m ${botTactico.getEstadoTexto()}`;
 
-        // Verificar captura (solo cazador)
-        if (esCazador && distBot < 1.8) {
-            finalizar("EL BOT TE ATRAPÓ");
-        }
-
-        // Sistema de disparo inteligente
-        if (esCazador && botTactico.puedeDisparar(dt)) {
-            if (botTactico.intentarDisparar(distBot, vision.visible)) {
-                disparar(2);
+            // Verificar captura (solo cazador)
+            if (esCazador && distBot < 1.8) {
+                finalizar("EL BOT TE ATRAPÓ");
             }
-        }
 
-        // Obtener objetivo basado en estado (ahora con dt para timing de waypoints)
-        const objetivoBot = botTactico.obtenerObjetivo(botPos, jugadorPos, esCazador, dt);
-
-        // Usar pathfinding para obtener siguiente punto (ANTES de verificar agacharse)
-        const siguientePunto = pathfinder.obtenerSiguientePunto(
-            botPos, objetivoBot
-        );
-
-        // Verificar si el bot debe agacharse (pasamos el siguiente punto para anticipar)
-        const botDebeAgacharse = botTactico.debeAgacharse(botPos, laberinto, DIMENSION, ESCALA, siguientePunto);
-
-        // Calcular dirección de movimiento
-        let dirBotRaw;
-        if (siguientePunto) {
-            dirBotRaw = {
-                x: siguientePunto.x - botObj.position.x,
-                z: siguientePunto.z - botObj.position.z
-            };
-        } else {
-            dirBotRaw = {
-                x: objetivoBot.x - botObj.position.x,
-                z: objetivoBot.z - botObj.position.z
-            };
-        }
-
-        // Solo mover si hay distancia significativa
-        const distMov = Math.sqrt(dirBotRaw.x * dirBotRaw.x + dirBotRaw.z * dirBotRaw.z);
-        const botSeMovio = distMov > 0.1;
-
-        // Cambiar animación del bot según movimiento y si debe agacharse
-        cambiarAnimacionBot(botSeMovio, botDebeAgacharse);
-
-        if (botSeMovio) {
-            // Normalizar dirección raw
-            const dirNormX = dirBotRaw.x / distMov;
-            const dirNormZ = dirBotRaw.z / distMov;
-
-            // Suavizar dirección para giros naturales
-            const dirSuave = botTactico.suavizarDireccion(dirNormX, dirNormZ, dt);
-
-            // ===== SISTEMA DE ESQUIVE DE PROYECTILES =====
-            // Intentar esquivar proyectiles enemigos
-            botTactico.intentarEsquivar(botPos, proyectilesSium, dt);
-            const esquive = botTactico.obtenerModificadorEsquive();
-
-            // Aplicar modificador de esquive a la dirección
-            let dirFinalX = dirSuave.x;
-            let dirFinalZ = dirSuave.z;
-
-            if (esquive.activo) {
-                // Cuando esquiva, priorizar la dirección de esquive
-                dirFinalX = dirSuave.x * 0.3 + esquive.x * 0.7;
-                dirFinalZ = dirSuave.z * 0.3 + esquive.z * 0.7;
-
-                // Normalizar resultado
-                const magFinal = Math.sqrt(dirFinalX * dirFinalX + dirFinalZ * dirFinalZ);
-                if (magFinal > 0) {
-                    dirFinalX /= magFinal;
-                    dirFinalZ /= magFinal;
+            // Sistema de disparo inteligente
+            if (esCazador && botTactico.puedeDisparar(dt)) {
+                if (botTactico.intentarDisparar(distBot, vision.visible)) {
+                    disparar(2);
                 }
             }
 
-            // Velocidad variable según estado (más rápido si esquiva)
-            // Velocidad base 7 = igual que el jugador
-            const velocidadBase = 7 * dt;
-            let velocidadBot = botTactico.obtenerVelocidad(velocidadBase);
-            if (esquive.activo) {
-                velocidadBot *= 2.0; // Boost de velocidad al esquivar (2x)
-            }
+            // Mover el bot...
+            const objetivoBot = botTactico.obtenerObjetivo(botPos, jugadorPos, esCazador, dt);
+            const siguientePunto = pathfinder.obtenerSiguientePunto(botPos, objetivoBot);
+            const botDebeAgacharse = botTactico.debeAgacharse(botPos, laberinto, DIMENSION, ESCALA, siguientePunto);
 
-            // Calcular nueva posición
-            const nX = botObj.position.x + dirFinalX * velocidadBot;
-            const nZ = botObj.position.z + dirFinalZ * velocidadBot;
-
-            // Mover X independiente (permite deslizarse por paredes)
-            if (!colision(nX, botObj.position.z, botDebeAgacharse, RADIO_BOT)) {
-                botObj.position.x = nX;
-            }
-
-            // Mover Z independiente
-            if (!colision(botObj.position.x, nZ, botDebeAgacharse, RADIO_BOT)) {
-                botObj.position.z = nZ;
-            }
-
-            // Rotar el bot para que mire hacia la dirección de movimiento
-            const anguloRotacion = Math.atan2(dirFinalX, dirFinalZ);
-            botObj.rotation.y = anguloRotacion;
-        }
-
-        // FORZAR escala fija del bot (la animación FBX tiene keyframes de escala)
-        if (botModelo) {
-            const escalaY = botDebeAgacharse ? ESCALA_AGACHADO : ESCALA_PERSONAJE;
-            botModelo.scale.set(ESCALA_PERSONAJE, escalaY, ESCALA_PERSONAJE);
-        }
-
-        // SUAVIZAR rotación del bot (evita saltos al cambiar animación)
-        if (botContenedor) {
-            let targetX, targetY, targetZ;
-
-            if (botDebeAgacharse) {
-                targetX = agachadoRotacionX;
-                targetY = agachadoRotacionY;
-                targetZ = agachadoRotacionZ;
-            } else if (botMoviendo) {
-                targetX = caminarRotacionX;
-                targetY = caminarRotacionY;
-                targetZ = caminarRotacionZ;
+            let dirBotRaw;
+            if (siguientePunto) {
+                dirBotRaw = { x: siguientePunto.x - botObj.position.x, z: siguientePunto.z - botObj.position.z };
             } else {
-                targetX = paradoRotacionX;
-                targetY = paradoRotacionY;
-                targetZ = paradoRotacionZ;
+                dirBotRaw = { x: objetivoBot.x - botObj.position.x, z: objetivoBot.z - botObj.position.z };
             }
 
-            // Interpolar rotación suavemente (10 * dt es ~0.3s)
-            botContenedor.rotation.x += (targetX - botContenedor.rotation.x) * 10 * dt;
-            botContenedor.rotation.y += (targetY - botContenedor.rotation.y) * 10 * dt;
-            botContenedor.rotation.z += (targetZ - botContenedor.rotation.z) * 10 * dt;
+            const distMov = Math.sqrt(dirBotRaw.x * dirBotRaw.x + dirBotRaw.z * dirBotRaw.z);
+            const botSeMovio = distMov > 0.1;
+
+            cambiarAnimacionBot(botSeMovio, botDebeAgacharse);
+
+            if (botSeMovio) {
+                const dirNormX = dirBotRaw.x / distMov;
+                const dirNormZ = dirBotRaw.z / distMov;
+                const dirSuave = botTactico.suavizarDireccion(dirNormX, dirNormZ, dt);
+
+                botTactico.intentarEsquivar(botPos, proyectilesSium, dt);
+                const esquive = botTactico.obtenerModificadorEsquive();
+
+                let dirFinalX = dirSuave.x;
+                let dirFinalZ = dirSuave.z;
+
+                if (esquive.activo) {
+                    dirFinalX = dirSuave.x * 0.3 + esquive.x * 0.7;
+                    dirFinalZ = dirSuave.z * 0.3 + esquive.z * 0.7;
+                    const magFinal = Math.sqrt(dirFinalX * dirFinalX + dirFinalZ * dirFinalZ);
+                    if (magFinal > 0) {
+                        dirFinalX /= magFinal;
+                        dirFinalZ /= magFinal;
+                    }
+                }
+
+                const velocidadBase = 7 * dt;
+                let velocidadBot = botTactico.obtenerVelocidad(velocidadBase);
+                if (esquive.activo) velocidadBot *= 2.0;
+
+                const nX = botObj.position.x + dirFinalX * velocidadBot;
+                const nZ = botObj.position.z + dirFinalZ * velocidadBot;
+
+                if (!colision(nX, botObj.position.z, botDebeAgacharse, RADIO_BOT)) botObj.position.x = nX;
+                if (!colision(botObj.position.x, nZ, botDebeAgacharse, RADIO_BOT)) botObj.position.z = nZ;
+
+                botObj.rotation.y = Math.atan2(dirFinalX, dirFinalZ);
+            }
+
+            if (botModelo) {
+                const escalaY = botDebeAgacharse ? ESCALA_AGACHADO : ESCALA_PERSONAJE;
+                botModelo.scale.set(ESCALA_PERSONAJE, escalaY, ESCALA_PERSONAJE);
+            }
+
+            if (botContenedor) {
+                let targetX = botDebeAgacharse ? agachadoRotacionX : (botMoviendo ? caminarRotacionX : paradoRotacionX);
+                let targetY = botDebeAgacharse ? agachadoRotacionY : (botMoviendo ? caminarRotacionY : paradoRotacionY);
+                let targetZ = botDebeAgacharse ? agachadoRotacionZ : (botMoviendo ? caminarRotacionZ : paradoRotacionZ);
+                botContenedor.rotation.x += (targetX - botContenedor.rotation.x) * 10 * dt;
+                botContenedor.rotation.y += (targetY - botContenedor.rotation.y) * 10 * dt;
+                botContenedor.rotation.z += (targetZ - botContenedor.rotation.z) * 10 * dt;
+            }
+        } else {
+            // MODO MULTIJUGADOR: Actualizar distancia al oponente más cercano
+            if (typeof jugadoresRemotos !== 'undefined' && jugadoresRemotos.size > 0) {
+                let minDist = 999;
+                jugadoresRemotos.forEach(j => {
+                    const d = j.contenedor.position.distanceTo(posicionJugador);
+                    if (d < minDist) minDist = d;
+                });
+                document.getElementById('distancia-bot').innerText = `${minDist.toFixed(1)}m RIVAL`;
+            } else {
+                document.getElementById('distancia-bot').innerText = `BUSCANDO...`;
+            }
         }
 
         // Temporizador de roles
