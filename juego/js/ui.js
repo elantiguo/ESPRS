@@ -55,6 +55,11 @@ function finalizar(res) {
     // Detener animaciones para liberar recursos
     if (botMixer) botMixer.stopAllAction();
     if (jugadorMixer) jugadorMixer.stopAllAction();
+
+    // Reiniciar música de menú
+    if (typeof reproducirMusicaMenu === 'function') {
+        reproducirMusicaMenu();
+    }
 }
 
 function onResize() {
@@ -452,6 +457,12 @@ function configurarCallbacksLobby() {
         // Ocultar menú y mostrar HUD
         document.getElementById('overlay').classList.add('hidden');
         document.getElementById('hud-juego').classList.remove('hidden');
+
+        // Detener música de menú
+        if (typeof detenerMusicaMenu === 'function') {
+            detenerMusicaMenu();
+        }
+
         // Iniciar cinemática
         if (typeof iniciarCinematica === 'function') {
             renderizador.domElement.requestPointerLock();

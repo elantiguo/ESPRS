@@ -124,6 +124,11 @@ function iniciarJuego() {
 
     // Iniciar fase cinemática
     iniciarCinematica();
+
+    // Detener música de menú
+    if (typeof detenerMusicaMenu === 'function') {
+        detenerMusicaMenu();
+    }
 }
 
 function iniciarCinematica() {
