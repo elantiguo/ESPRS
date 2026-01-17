@@ -9,6 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/fflate@0.7.4/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="css/estilos.css">
 </head>
@@ -205,6 +206,16 @@
                         </svg>
                     </button>
 
+                    <button onclick="abrirLobbyMultijugador()" id="btn-multijugador" class="btn-action-primary group"
+                        style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: #ffffff;">
+                        <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z">
+                            </path>
+                        </svg>
+                        <span>Modo Multijugador</span>
+                    </button>
+
                     <button onclick="document.getElementById('modal-controles').classList.toggle('hidden')"
                         class="btn-action-secondary">
                         Configuración / Controles
@@ -269,6 +280,144 @@
 
                     <button onclick="document.getElementById('modal-controles').classList.add('hidden')"
                         class="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-black py-4 uppercase tracking-widest text-sm transition-colors">
+                        Volver al Menú
+                    </button>
+                </div>
+            </div>
+
+            <!-- Modal Lobby Multijugador -->
+            <div id="modal-lobby" class="hidden absolute inset-0 flex items-center justify-center bg-black/95 z-50">
+                <div class="glass p-8 max-w-xl w-full rounded-sm border border-green-500/30">
+                    <div class="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+                        <h2 class="text-3xl font-black text-white italic tracking-tighter uppercase">
+                            Lobby Multijugador
+                        </h2>
+                        <div id="lobby-estado-conexion" class="flex items-center gap-2 text-sm">
+                            <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                            <span class="text-zinc-400">Desconectado</span>
+                        </div>
+                    </div>
+
+                    <!-- Pantalla de Conexión -->
+                    <div id="lobby-pantalla-conexion" class="space-y-6">
+                        <p class="text-zinc-400 text-center">Conecta al servidor para jugar con otros.</p>
+                        <button onclick="conectarYMostrarOpciones()"
+                            class="w-full bg-green-600 hover:bg-green-500 text-white font-black py-4 uppercase tracking-widest text-sm transition-colors flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                            Conectar al Servidor
+                        </button>
+                    </div>
+
+                    <!-- Pantalla de Opciones (Crear/Unirse) -->
+                    <div id="lobby-pantalla-opciones" class="hidden space-y-6">
+                        <div class="grid grid-cols-2 gap-4">
+                            <button onclick="mostrarCrearSala()"
+                                class="bg-blue-600 hover:bg-blue-500 text-white font-black py-6 px-4 uppercase tracking-wider text-sm transition-colors rounded flex flex-col items-center gap-2">
+                                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                                Crear Sala
+                            </button>
+                            <button onclick="mostrarUnirseSala()"
+                                class="bg-purple-600 hover:bg-purple-500 text-white font-black py-6 px-4 uppercase tracking-wider text-sm transition-colors rounded flex flex-col items-center gap-2">
+                                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M11 16l-4-4m0 0l4-4m-4 4h14"></path>
+                                </svg>
+                                Unirse a Sala
+                            </button>
+                        </div>
+
+                        <!-- Lista de Salas Disponibles -->
+                        <div class="bg-zinc-900/50 rounded p-4">
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="text-white font-bold text-sm uppercase tracking-wider">Salas Disponibles</h3>
+                                <button onclick="actualizarListaSalas()" class="text-zinc-400 hover:text-white text-xs">
+                                    🔄 Actualizar
+                                </button>
+                            </div>
+                            <div id="lista-salas" class="space-y-2 max-h-32 overflow-y-auto">
+                                <p class="text-zinc-500 text-sm text-center py-4">No hay salas disponibles</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pantalla Crear Sala -->
+                    <div id="lobby-pantalla-crear" class="hidden space-y-6">
+                        <div>
+                            <label class="text-zinc-400 text-xs uppercase tracking-wider block mb-2">Nombre de la
+                                Sala</label>
+                            <input type="text" id="input-nombre-sala" placeholder="Mi Sala Épica"
+                                class="w-full bg-zinc-800 border border-zinc-700 rounded px-4 py-3 text-white focus:border-green-500 focus:outline-none">
+                        </div>
+                        <button onclick="crearSalaDesdeUI()"
+                            class="w-full bg-green-600 hover:bg-green-500 text-white font-black py-4 uppercase tracking-widest text-sm transition-colors">
+                            Crear Sala
+                        </button>
+                        <button onclick="volverAOpcionesLobby()"
+                            class="w-full text-zinc-400 hover:text-white text-sm py-2">
+                            ← Volver
+                        </button>
+                    </div>
+
+                    <!-- Pantalla Unirse a Sala -->
+                    <div id="lobby-pantalla-unirse" class="hidden space-y-6">
+                        <div>
+                            <label class="text-zinc-400 text-xs uppercase tracking-wider block mb-2">Código de
+                                Sala</label>
+                            <input type="text" id="input-codigo-sala" placeholder="ABC123" maxlength="6"
+                                class="w-full bg-zinc-800 border border-zinc-700 rounded px-4 py-3 text-white text-center font-mono text-2xl tracking-[0.5em] uppercase focus:border-purple-500 focus:outline-none">
+                        </div>
+                        <button onclick="unirseSalaDesdeUI()"
+                            class="w-full bg-purple-600 hover:bg-purple-500 text-white font-black py-4 uppercase tracking-widest text-sm transition-colors">
+                            Unirse
+                        </button>
+                        <button onclick="volverAOpcionesLobby()"
+                            class="w-full text-zinc-400 hover:text-white text-sm py-2">
+                            ← Volver
+                        </button>
+                    </div>
+
+                    <!-- Pantalla En Sala (Esperando) -->
+                    <div id="lobby-pantalla-sala" class="hidden space-y-6">
+                        <div class="bg-zinc-900/50 rounded p-4 text-center">
+                            <p class="text-zinc-400 text-xs uppercase tracking-wider mb-1">Código de Sala</p>
+                            <p id="sala-codigo-mostrar"
+                                class="text-4xl font-black text-green-400 tracking-[0.3em] font-mono">------</p>
+                            <p class="text-zinc-500 text-xs mt-2">Comparte este código con tu oponente</p>
+                        </div>
+
+                        <div class="bg-zinc-900/50 rounded p-4">
+                            <h3 class="text-white font-bold text-sm uppercase tracking-wider mb-3">Jugadores</h3>
+                            <div id="lista-jugadores-sala" class="space-y-2">
+                                <!-- Jugadores se agregan dinámicamente -->
+                            </div>
+                        </div>
+
+                        <div class="flex gap-4">
+                            <button onclick="toggleListoUI()" id="btn-listo"
+                                class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-black font-black py-4 uppercase tracking-widest text-sm transition-colors">
+                                Estoy Listo
+                            </button>
+                            <button onclick="salirDeSalaUI()"
+                                class="bg-red-600 hover:bg-red-500 text-white font-black py-4 px-6 uppercase tracking-widest text-sm transition-colors">
+                                Salir
+                            </button>
+                        </div>
+
+                        <button onclick="iniciarPartidaDesdeUI()" id="btn-iniciar-partida"
+                            class="hidden w-full bg-green-600 hover:bg-green-500 text-white font-black py-4 uppercase tracking-widest text-sm transition-colors">
+                            🎮 Iniciar Partida
+                        </button>
+                    </div>
+
+                    <!-- Botón Cerrar -->
+                    <button onclick="cerrarLobby()"
+                        class="w-full mt-6 bg-zinc-800 hover:bg-zinc-700 text-white font-black py-3 uppercase tracking-widest text-sm transition-colors">
                         Volver al Menú
                     </button>
                 </div>
@@ -345,6 +494,7 @@
     <!-- Scripts del Juego -->
     <!-- Orden de carga importante para dependencias -->
     <script src="js/config.js"></script>
+    <script src="js/network.js"></script>
     <script src="js/loader.js"></script>
     <script src="js/cache.js"></script>
     <script src="js/model-cache.js"></script>

@@ -1,0 +1,14 @@
+{
+    "name": "sium-duel-project",
+    "version": "1.0.0",
+    "description": "Proyecto completo SIUM DUEL (Servidor + Juego)",
+    "main": "servidor/server.js",
+    "scripts": {
+        "start": "node servidor/server.js",
+        "install-all": "npm install --prefix servidor",
+        "build": "echo 'No build step needed'"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC"
+}

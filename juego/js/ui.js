@@ -81,6 +81,11 @@ function seleccionarPersonaje(id) {
         btn.classList.add('selected');
     }
 
+    // Sincronizar con multijugador si está conectado
+    if (typeof enviarPersonaje === 'function') {
+        enviarPersonaje(id);
+    }
+
     console.log("Personaje seleccionado:", p.nombre);
 }
 
@@ -305,3 +310,359 @@ document.addEventListener('DOMContentLoaded', () => {
     // Configurar efectos de hover
     setupButtonHoverEffects();
 });
+
+// ========================================
+// SISTEMA DE LOBBY MULTIJUGADOR
+// ========================================
+
+var lobbyEstadoListo = false;
+var lobbyEsHost = false;
+
+function abrirLobbyMultijugador() {
+    document.getElementById('modal-lobby').classList.remove('hidden');
+
+    // Si ya está conectado, mostrar opciones
+    if (typeof estaConectado === 'function' && estaConectado()) {
+        mostrarPantallaLobby('opciones');
+        actualizarEstadoConexion(true);
+        actualizarListaSalas();
+    } else {
+        mostrarPantallaLobby('conexion');
+    }
+}
+
+function cerrarLobby() {
+    document.getElementById('modal-lobby').classList.add('hidden');
+}
+
+function mostrarPantallaLobby(pantalla) {
+    const pantallas = ['conexion', 'opciones', 'crear', 'unirse', 'sala'];
+    pantallas.forEach(p => {
+        const el = document.getElementById('lobby-pantalla-' + p);
+        if (el) el.classList.add('hidden');
+    });
+
+    const activa = document.getElementById('lobby-pantalla-' + pantalla);
+    if (activa) activa.classList.remove('hidden');
+}
+
+function actualizarEstadoConexion(conectado) {
+    const indicador = document.getElementById('lobby-estado-conexion');
+    if (!indicador) return;
+
+    if (conectado) {
+        indicador.innerHTML = `
+            <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+            <span class="text-green-400">Conectado</span>
+        `;
+    } else {
+        indicador.innerHTML = `
+            <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+            <span class="text-zinc-400">Desconectado</span>
+        `;
+    }
+}
+
+function conectarYMostrarOpciones() {
+    if (typeof conectarServidor !== 'function') {
+        alert('Error: Sistema de red no disponible');
+        return;
+    }
+
+    conectarServidor((resultado) => {
+        if (resultado.exito) {
+            actualizarEstadoConexion(true);
+            mostrarPantallaLobby('opciones');
+            actualizarListaSalas();
+
+            // Configurar callbacks de red
+            configurarCallbacksLobby();
+        } else {
+            alert('Error conectando: ' + (resultado.error || 'Servidor no disponible'));
+        }
+    });
+}
+
+function configurarCallbacksLobby() {
+    if (typeof networkCallbacks === 'undefined') return;
+
+    networkCallbacks.onJugadorUnido = (data) => {
+        actualizarListaJugadoresSala();
+    };
+
+    networkCallbacks.onJugadorSalio = (data) => {
+        actualizarListaJugadoresSala();
+    };
+
+    networkCallbacks.onSalaActualizada = (data) => {
+        actualizarListaJugadoresSala();
+        verificarTodosListos();
+    };
+
+    networkCallbacks.onPartidaIniciando = (data) => {
+        console.log('🎮 [UI] Partida iniciando, regenerando mapa con datos del servidor...');
+
+        // IMPORTANTE: Regenerar todo el mundo con el mapa del servidor
+        if (data.mapa) {
+            // Limpiar el laberinto actual de la escena
+            escena.children.filter(obj =>
+                obj instanceof THREE.InstancedMesh ||
+                (obj instanceof THREE.Mesh && obj.geometry instanceof THREE.PlaneGeometry)
+            ).forEach(obj => escena.remove(obj));
+
+            // Regenerar laberinto con el mapa del servidor
+            generarLaberinto(); // Ahora usará window.mapaServidor
+
+            // Reinicializar pathfinding con el nuevo mapa
+            if (typeof inicializarPathfinder === 'function') {
+                inicializarPathfinder();
+            }
+
+            // Reinicializar IA táctica
+            if (typeof inicializarBotTactico === 'function') {
+                inicializarBotTactico();
+            }
+
+            // Respawnear entidades en las posiciones correctas
+            if (typeof spawnEntidades === 'function') {
+                // Limpiar entidades anteriores primero
+                if (jugadorObj) escena.remove(jugadorObj);
+                if (botObj) escena.remove(botObj);
+                spawnEntidades();
+            }
+        }
+
+        cerrarLobby();
+        // Ocultar menú y mostrar HUD
+        document.getElementById('overlay').classList.add('hidden');
+        document.getElementById('hud-juego').classList.remove('hidden');
+        // Iniciar cinemática
+        if (typeof iniciarCinematica === 'function') {
+            renderizador.domElement.requestPointerLock();
+            iniciarCinematica();
+        }
+    };
+}
+
+function mostrarCrearSala() {
+    mostrarPantallaLobby('crear');
+}
+
+function mostrarUnirseSala() {
+    mostrarPantallaLobby('unirse');
+}
+
+function volverAOpcionesLobby() {
+    mostrarPantallaLobby('opciones');
+    actualizarListaSalas();
+}
+
+function crearSalaDesdeUI() {
+    const nombreInput = document.getElementById('input-nombre-sala');
+    const nombre = nombreInput ? nombreInput.value.trim() : 'Sala SIUM';
+
+    if (typeof crearSala !== 'function') {
+        alert('Error: Sistema de red no disponible');
+        return;
+    }
+
+    crearSala(nombre || 'Sala SIUM', (resultado) => {
+        if (resultado.exito) {
+            lobbyEsHost = true;
+            mostrarPantallaLobby('sala');
+            mostrarInfoSala(resultado.sala);
+        } else {
+            alert('Error creando sala: ' + (resultado.error || 'Desconocido'));
+        }
+    });
+}
+
+function unirseSalaDesdeUI() {
+    const codigoInput = document.getElementById('input-codigo-sala');
+    const codigo = codigoInput ? codigoInput.value.trim().toUpperCase() : '';
+
+    if (!codigo || codigo.length < 4) {
+        alert('Ingresa un código de sala válido');
+        return;
+    }
+
+    if (typeof unirseASala !== 'function') {
+        alert('Error: Sistema de red no disponible');
+        return;
+    }
+
+    unirseASala(codigo, (resultado) => {
+        if (resultado.exito) {
+            lobbyEsHost = false;
+            mostrarPantallaLobby('sala');
+            mostrarInfoSala(resultado.sala);
+        } else {
+            alert('Error uniéndose: ' + (resultado.error || 'Código inválido'));
+        }
+    });
+}
+
+function mostrarInfoSala(sala) {
+    // Mostrar código
+    const codigoEl = document.getElementById('sala-codigo-mostrar');
+    if (codigoEl) codigoEl.textContent = sala.id;
+
+    // Actualizar lista de jugadores
+    actualizarListaJugadoresSala();
+
+    // Mostrar/ocultar botón de iniciar (solo host)
+    const btnIniciar = document.getElementById('btn-iniciar-partida');
+    if (btnIniciar) {
+        btnIniciar.classList.toggle('hidden', !lobbyEsHost);
+    }
+}
+
+function actualizarListaJugadoresSala() {
+    const listaEl = document.getElementById('lista-jugadores-sala');
+    if (!listaEl) return;
+
+    const sala = typeof obtenerSalaActual === 'function' ? obtenerSalaActual() : null;
+    if (!sala) return;
+
+    const miId = typeof obtenerMiId === 'function' ? obtenerMiId() : null;
+
+    listaEl.innerHTML = sala.jugadores.map(j => `
+        <div class="flex items-center justify-between bg-zinc-800 rounded px-3 py-2">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full ${j.listo ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}"></span>
+                <span class="text-white font-medium">${j.id === miId ? '(Tú)' : ''} ${j.personaje || 'Jugador'}</span>
+            </div>
+            <span class="text-xs ${j.listo ? 'text-green-400' : 'text-yellow-400'}">
+                ${j.listo ? 'LISTO' : 'Esperando...'}
+            </span>
+        </div>
+    `).join('');
+}
+
+function toggleListoUI() {
+    lobbyEstadoListo = !lobbyEstadoListo;
+
+    const btnListo = document.getElementById('btn-listo');
+    if (btnListo) {
+        if (lobbyEstadoListo) {
+            btnListo.className = 'flex-1 bg-green-600 hover:bg-green-500 text-white font-black py-4 uppercase tracking-widest text-sm transition-colors';
+            btnListo.textContent = '✓ Listo';
+        } else {
+            btnListo.className = 'flex-1 bg-yellow-600 hover:bg-yellow-500 text-black font-black py-4 uppercase tracking-widest text-sm transition-colors';
+            btnListo.textContent = 'Estoy Listo';
+        }
+    }
+
+    if (typeof marcarListo === 'function') {
+        marcarListo(lobbyEstadoListo);
+    }
+}
+
+function verificarTodosListos() {
+    const sala = typeof obtenerSalaActual === 'function' ? obtenerSalaActual() : null;
+    if (!sala || !lobbyEsHost) return;
+
+    const btnIniciar = document.getElementById('btn-iniciar-partida');
+    const todosListos = sala.jugadores.every(j => j.listo) && sala.jugadores.length >= 2;
+
+    if (btnIniciar) {
+        btnIniciar.disabled = !todosListos;
+        btnIniciar.classList.toggle('opacity-50', !todosListos);
+    }
+}
+
+function iniciarPartidaDesdeUI() {
+    if (!lobbyEsHost) return;
+
+    if (typeof iniciarPartida === 'function') {
+        iniciarPartida((resultado) => {
+            if (!resultado.exito) {
+                alert('Error iniciando partida: ' + (resultado.error || 'No todos están listos'));
+            }
+        });
+    }
+}
+
+function salirDeSalaUI() {
+    if (typeof salirDeSala === 'function') {
+        salirDeSala(() => {
+            lobbyEstadoListo = false;
+            lobbyEsHost = false;
+            mostrarPantallaLobby('opciones');
+            actualizarListaSalas();
+        });
+    }
+}
+
+function actualizarListaSalas() {
+    if (typeof listarSalas !== 'function') return;
+
+    listarSalas((resultado) => {
+        const listaEl = document.getElementById('lista-salas');
+        if (!listaEl) return;
+
+        if (!resultado.salas || resultado.salas.length === 0) {
+            listaEl.innerHTML = '<p class="text-zinc-500 text-sm text-center py-4">No hay salas disponibles</p>';
+            return;
+        }
+
+        listaEl.innerHTML = resultado.salas.map(sala => `
+            <div class="flex items-center justify-between bg-zinc-800 rounded px-3 py-2 cursor-pointer hover:bg-zinc-700"
+                 onclick="document.getElementById('input-codigo-sala').value='${sala.id}'; mostrarUnirseSala();">
+                <div>
+                    <span class="text-white font-medium">${sala.nombre}</span>
+                    <span class="text-zinc-400 text-xs ml-2">${sala.jugadores}/${sala.maxJugadores}</span>
+                </div>
+                <span class="text-xs text-green-400 font-mono">${sala.id}</span>
+            </div>
+        `).join('');
+    });
+}
+// ========================================
+// SISTEMA DE NOTIFICACIONES / KILL FEED
+// ========================================
+
+function mostrarNotificacionCombate(texto, color = 'white') {
+    let feedContainer = document.getElementById('combat-feed');
+    if (!feedContainer) {
+        feedContainer = document.createElement('div');
+        feedContainer.id = 'combat-feed';
+        feedContainer.className = 'absolute top-24 right-8 flex flex-col items-end gap-2 pointer-events-none z-30';
+        document.body.appendChild(feedContainer);
+    }
+
+    const item = document.createElement('div');
+    item.className = 'glass-light px-4 py-2 border-r-4 border-white animate-slide-in';
+    item.style.borderColor = color;
+    item.innerHTML = `<span class="text-white font-black italic uppercase text-xs tracking-tighter">${texto}</span>`;
+
+    feedContainer.appendChild(item);
+
+    // Animación de entrada
+    if (!document.getElementById('feed-styles')) {
+        const style = document.createElement('style');
+        style.id = 'feed-styles';
+        style.textContent = `
+            @keyframes slideInRight {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            .animate-slide-in {
+                animation: slideInRight 0.3s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+            }
+            .glass-light {
+                background: rgba(0, 0, 0, 0.6);
+                backdrop-filter: blur(4px);
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Remover después de 4 segundos
+    setTimeout(() => {
+        item.style.transition = 'all 0.5s ease';
+        item.style.opacity = '0';
+        item.style.transform = 'translateX(20px)';
+        setTimeout(() => item.remove(), 500);
+    }, 4000);
+}

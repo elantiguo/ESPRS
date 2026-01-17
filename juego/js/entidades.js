@@ -83,10 +83,11 @@ function spawnEntidades() {
         const luzJugador = new THREE.PointLight(0x00aaff, 1.5, 10);
         luzJugador.position.set(0, 0, 0);
         jugadorObj.add(luzJugador);
-        escena.add(jugadorObj);
     }
+    // Asegurar que esté en la escena (especialmente importante en multijugador tras un reset)
+    if (jugadorObj.parent !== escena) escena.add(jugadorObj);
     jugadorObj.position.set(posInicialX, 0, posInicialZ);
-    jugadorObj.visible = false;
+    jugadorObj.visible = terceraPersona;
 
     if (!botObj) {
         botObj = new THREE.Group();
@@ -94,8 +95,9 @@ function spawnEntidades() {
         const luzB = new THREE.PointLight(0xff0000, 2, 12);
         luzB.position.set(0, 2, 0);
         botObj.add(luzB);
-        escena.add(botObj);
     }
+    // Asegurar que esté en la escena
+    if (botObj.parent !== escena) escena.add(botObj);
     botObj.position.set((DIMENSION - 2) * ESCALA - offset, 0, (DIMENSION - 2) * ESCALA - offset);
 
     // Cargar modelos iniciales
@@ -345,7 +347,8 @@ function disparar(quien) {
         // Animación de disparo en tercera persona
         if (terceraPersona && jugadorObj) {
             // Forzar rotación inmediata hacia yaw (donde mira la cámara)
-            jugadorObj.rotation.y = yaw;
+            // Restar Math.PI porque en tercera persona el yaw está invertido
+            jugadorObj.rotation.y = yaw - Math.PI;
 
             if (jugadorAnimaciones.disparar && jugadorAnimaciones.disparar.length > 0) {
                 console.log("  Animando disparo JUGADOR...");
@@ -413,6 +416,16 @@ function disparar(quien) {
 
         // Obtener proyectil del pool
         projectilePool.acquire(quien, _vecNextPos, _vecTarget);
+
+        // ========================================
+        // ENVIAR DISPARO POR RED (solo jugador, no bot)
+        // ========================================
+        if (quien === 1 && modoMultijugador && typeof enviarDisparo === 'function') {
+            enviarDisparo(
+                _vecNextPos.x, _vecNextPos.y, _vecNextPos.z,
+                _vecTarget.x, _vecTarget.y, _vecTarget.z
+            );
+        }
 
         // Flash de disparo
         const flash = new THREE.PointLight(0xffff00, 3, 10);

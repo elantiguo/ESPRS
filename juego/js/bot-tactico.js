@@ -459,29 +459,33 @@ class BotTactico {
     debeAgacharse(botPos, laberintoRef, dimension, escala, siguientePunto = null) {
         const offset = (dimension * escala) / 2;
 
-        const gx = Math.round((botPos.x + offset) / escala);
-        const gz = Math.round((botPos.z + offset) / escala);
-        const tileActual = laberintoRef[gz]?.[gx];
+        // Verificar puntos clave alrededor del bot
+        const radioDeteccion = (typeof RADIO_BOT !== 'undefined') ? RADIO_BOT * 0.6 : 0.5;
+        const puntos = [
+            { x: botPos.x, z: botPos.z },
+            { x: botPos.x + radioDeteccion, z: botPos.z },
+            { x: botPos.x - radioDeteccion, z: botPos.z },
+            { x: botPos.x, z: botPos.z + radioDeteccion },
+            { x: botPos.x, z: botPos.z - radioDeteccion }
+        ];
 
-        if (tileActual === 2) {
-            this.estaAgachado = true;
-            return true;
+        for (let p of puntos) {
+            const gx = Math.round((p.x + offset) / escala);
+            const gz = Math.round((p.z + offset) / escala);
+            const tile = laberintoRef[gz]?.[gx];
+            if (tile === 2) {
+                this.estaAgachado = true;
+                return true;
+            }
         }
 
-        // Verificar tiles adyacentes
-        for (let dx = -1; dx <= 1; dx++) {
-            for (let dz = -1; dz <= 1; dz++) {
-                if (dx === 0 && dz === 0) continue;
-                const tileVecino = laberintoRef[gz + dz]?.[gx + dx];
-                if (tileVecino === 2 && siguientePunto) {
-                    const dirX = siguientePunto.x - botPos.x;
-                    const dirZ = siguientePunto.z - botPos.z;
-                    if ((dx > 0 && dirX > 0) || (dx < 0 && dirX < 0) ||
-                        (dz > 0 && dirZ > 0) || (dz < 0 && dirZ < 0)) {
-                        this.estaAgachado = true;
-                        return true;
-                    }
-                }
+        // Anticipación: Verificar si el siguiente punto es un hueco
+        if (siguientePunto) {
+            const gx = Math.round((siguientePunto.x + offset) / escala);
+            const gz = Math.round((siguientePunto.z + offset) / escala);
+            if (laberintoRef[gz]?.[gx] === 2) {
+                this.estaAgachado = true;
+                return true;
             }
         }
 

@@ -111,6 +111,10 @@ var idPersonajeCargado = idPersonajeSeleccionado;
 var ESCALA_PERSONAJE = 0.001;
 var ESCALA_AGACHADO = 0.00075;
 
+// Radios de colisión
+const RADIO_JUGADOR = 0.8;
+const RADIO_BOT = 0.8;
+
 // Lista de proyectiles activos Sium
 var proyectilesSium = [];
 
@@ -149,7 +153,7 @@ var jugadorDisparando = false;  // Indica si el jugador está disparando (para r
 var botContenedor = null;       // Contenedor de rotación del bot
 var posicionJugador = { x: 0, y: 2, z: 0 }; // Posición real del jugador
 var distanciaCamara = 5;        // Distancia de la cámara en tercera persona
-var alturaCamara = 3;           // Altura de la cámara en tercera persona
+var alturaCamara = 4;           // Altura de la cámara en tercera persona
 
 // ========================================
 // ROTACIÓN DE MODELOS FBX (ajustar aquí)

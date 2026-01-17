@@ -6,32 +6,42 @@ var matHueco = null;
 var matSuelo = null;
 
 function generarLaberinto() {
-    for (let y = 0; y < DIMENSION; y++) {
-        laberinto[y] = [];
-        for (let x = 0; x < DIMENSION; x++) laberinto[y][x] = 1;
-    }
+    // IMPORTANTE: Si estamos en modo multijugador y el servidor envió un mapa, usarlo
+    if (typeof window !== 'undefined' && window.mapaServidor) {
+        console.log('🗺️ Usando mapa del servidor (multijugador)');
+        laberinto = JSON.parse(JSON.stringify(window.mapaServidor)); // Copia profunda
+        // Limpiar el mapa recibido para evitar reutilizarlo
+        window.mapaServidor = null;
+    } else {
+        // Modo local: generar mapa aleatorio
+        console.log('🗺️ Generando mapa local (modo individual)');
+        for (let y = 0; y < DIMENSION; y++) {
+            laberinto[y] = [];
+            for (let x = 0; x < DIMENSION; x++) laberinto[y][x] = 1;
+        }
 
-    function excavar(x, y) {
-        laberinto[y][x] = 0;
-        const direcciones = [[0, 2], [0, -2], [2, 0], [-2, 0]].sort(() => Math.random() - 0.5);
-        for (let [dx, dy] of direcciones) {
-            let nx = x + dx, ny = y + dy;
-            if (nx > 0 && nx < DIMENSION - 1 && ny > 0 && ny < DIMENSION - 1 && laberinto[ny][nx] === 1) {
-                laberinto[y + dy / 2][x + dx / 2] = 0;
-                excavar(nx, ny);
+        function excavar(x, y) {
+            laberinto[y][x] = 0;
+            const direcciones = [[0, 2], [0, -2], [2, 0], [-2, 0]].sort(() => Math.random() - 0.5);
+            for (let [dx, dy] of direcciones) {
+                let nx = x + dx, ny = y + dy;
+                if (nx > 0 && nx < DIMENSION - 1 && ny > 0 && ny < DIMENSION - 1 && laberinto[ny][nx] === 1) {
+                    laberinto[y + dy / 2][x + dx / 2] = 0;
+                    excavar(nx, ny);
+                }
             }
         }
-    }
-    excavar(1, 1);
+        excavar(1, 1);
 
-    // --- Generación de Huecos (Agacharse) ---
-    for (let y = 1; y < DIMENSION - 1; y++) {
-        for (let x = 1; x < DIMENSION - 1; x++) {
-            if (laberinto[y][x] === 1 && Math.random() < 0.15) {
-                const horiz = laberinto[y][x - 1] === 0 && laberinto[y][x + 1] === 0;
-                const vert = laberinto[y - 1][x] === 0 && laberinto[y + 1][x] === 0;
-                if (horiz || vert) {
-                    laberinto[y][x] = 2;
+        // --- Generación de Huecos (Agacharse) ---
+        for (let y = 1; y < DIMENSION - 1; y++) {
+            for (let x = 1; x < DIMENSION - 1; x++) {
+                if (laberinto[y][x] === 1 && Math.random() < 0.15) {
+                    const horiz = laberinto[y][x - 1] === 0 && laberinto[y][x + 1] === 0;
+                    const vert = laberinto[y - 1][x] === 0 && laberinto[y + 1][x] === 0;
+                    if (horiz || vert) {
+                        laberinto[y][x] = 2;
+                    }
                 }
             }
         }
@@ -106,15 +116,32 @@ function generarLaberinto() {
     escena.add(suelo);
 }
 
-function colision(nx, nz, agachado = false) {
+function colision(nx, nz, agachado = false, radio = 0.5) {
     const offset = (DIMENSION * ESCALA) / 2;
-    const gx = Math.round((nx + offset) / ESCALA);
-    const gz = Math.round((nz + offset) / ESCALA);
-    const tile = laberinto[gz]?.[gx];
 
-    // 1 = Pared Solida (Siempre colisiona)
-    // 2 = Hueco (Colisiona SI NO estas agachado)
-    if (tile === 1) return true;
-    if (tile === 2) return !agachado;
+    // Verificar puntos en cruz alrededor de la posición (norte, sur, este, oeste y centro)
+    const puntos = [
+        { x: nx, z: nz },               // Centro
+        { x: nx + radio, z: nz },      // Derecha
+        { x: nx - radio, z: nz },      // Izquierda
+        { x: nx, z: nz + radio },      // Abajo
+        { x: nx, z: nz - radio },      // Arriba
+        { x: nx + radio * 0.7, z: nz + radio * 0.7 }, // Diagonales
+        { x: nx - radio * 0.7, z: nz + radio * 0.7 },
+        { x: nx + radio * 0.7, z: nz - radio * 0.7 },
+        { x: nx - radio * 0.7, z: nz - radio * 0.7 }
+    ];
+
+    for (let p of puntos) {
+        const gx = Math.round((p.x + offset) / ESCALA);
+        const gz = Math.round((p.z + offset) / ESCALA);
+        const tile = laberinto[gz]?.[gx];
+
+        // 1 = Pared Solida (Siempre colisiona)
+        // 2 = Hueco (Colisiona SI NO estas agachado)
+        if (tile === 1) return true;
+        if (tile === 2 && !agachado) return true;
+    }
+
     return false;
 }

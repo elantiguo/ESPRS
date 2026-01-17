@@ -182,6 +182,8 @@ function reiniciarSimulacion() {
     activo = false;
     tiempo = 30;
     cazadorId = 1;
+    vidaJugador = 100;
+    if (typeof actualizarHUD === 'function') actualizarHUD();
 
     // 2. Resetear posiciones (usar lógica de spawnEntidades)
     const offset = (DIMENSION * ESCALA) / 2;
@@ -231,6 +233,14 @@ window.reanudarJuego = function () {
 
 var ultimoTiempo = 0;
 var animDebugCount = 0;
+
+// ========================================
+// THROTTLE DE RED (enviar posición cada 50ms = 20 updates/s)
+// ========================================
+var _lastNetworkUpdate = 0;
+var _networkThrottleMs = 50;
+var _lastSentPos = { x: 0, y: 0, z: 0, rotY: 0 };
+var _lastSentAnimacion = 'parado'; // Rastrear último estado de animación enviado
 
 function obtenerTileEnPos(x, z) {
     const offset = (DIMENSION * ESCALA) / 2;
@@ -325,29 +335,37 @@ function bucle(tiempo) {
         // --- LÓGICA DE AGACHARSE (CROUCH) ---
         let quiereAgacharse = teclas['ShiftLeft'] || teclas['ShiftRight'];
 
-        // Verificar si estamos bajo un hueco (Tile 2) - usar posicionJugador
-        const tileActual = obtenerTileEnPos(posicionJugador.x, posicionJugador.z);
-        if (tileActual === 2) {
+        // Verificar si estamos bajo un hueco (Tile 2) - usar posicionJugador con radio
+        let bajoHueco = false;
+        const offset = (DIMENSION * ESCALA) / 2;
+        const puntosCheck = [
+            { x: posicionJugador.x, z: posicionJugador.z },
+            { x: posicionJugador.x + RADIO_JUGADOR * 0.5, z: posicionJugador.z },
+            { x: posicionJugador.x - RADIO_JUGADOR * 0.5, z: posicionJugador.z },
+            { x: posicionJugador.x, z: posicionJugador.z + RADIO_JUGADOR * 0.5 },
+            { x: posicionJugador.x, z: posicionJugador.z - RADIO_JUGADOR * 0.5 }
+        ];
+
+        for (let p of puntosCheck) {
+            if (obtenerTileEnPos(p.x, p.z) === 2) {
+                bajoHueco = true;
+                break;
+            }
+        }
+
+        if (bajoHueco) {
             quiereAgacharse = true; // Forzar agachado
         }
 
         const agachado = quiereAgacharse;
-        const alturaObjetivo = agachado ? 1.0 : 2.0;
+        const alturaObjetivo = agachado ? 1.4 : 2.4;
 
         // Ajuste de velocidad
         const multiplicadorVel = agachado ? 3.5 : 7;
         const vel = multiplicadorVel * dt;
 
-        // Calcular dirección de movimiento basándose en yaw
-        // En primera persona: forward es hacia donde mira la cámara
-        // En tercera persona: forward es alejándose de la cámara (cámara está detrás)
-        if (terceraPersona) {
-            // En tercera persona, la cámara está detrás, así que forward es hacia donde mira el jugador
-            _vecForward.set(Math.sin(yaw), 0, Math.cos(yaw));
-        } else {
-            // En primera persona, forward es hacia donde mira la cámara
-            _vecForward.set(-Math.sin(yaw), 0, -Math.cos(yaw));
-        }
+        // Calcular dirección de movimiento basándose en yaw (Unificado: W es siempre hacia -Z si yaw=0)
+        _vecForward.set(-Math.sin(yaw), 0, -Math.cos(yaw));
         _vecForward.normalize();
 
         _vecRight.set(0, 1, 0);
@@ -363,12 +381,76 @@ function bucle(tiempo) {
         if (teclas['KeyA']) { _vecNextPos.addScaledVector(_vecRight, vel); moviendo = true; }
         if (teclas['KeyD']) { _vecNextPos.addScaledVector(_vecRight, -vel); moviendo = true; }
 
-        // Pasamos estado 'agachado' a la colisión
-        if (!colision(_vecNextPos.x, _vecNextPos.z, agachado)) {
-            // Guardar posición del jugador
+        // Pasamos estado 'agachado' a la colisión con RADIO_JUGADOR
+        // Mover X independiente (permite deslizarse por paredes)
+        if (!colision(_vecNextPos.x, posicionJugador.z, agachado, RADIO_JUGADOR)) {
             posicionJugador.x = _vecNextPos.x;
+        }
+        // Mover Z independiente
+        if (!colision(posicionJugador.x, _vecNextPos.z, agachado, RADIO_JUGADOR)) {
             posicionJugador.z = _vecNextPos.z;
-            posicionJugador.y = alturaObjetivo;
+        }
+        posicionJugador.y = alturaObjetivo;
+
+        // ========================================
+        // SINCRONIZACIÓN DE RED (enviar posición)
+        // ========================================
+        if (modoMultijugador && estaConectado()) {
+            const ahora = Date.now();
+            // Throttle: enviar solo cada _networkThrottleMs
+            if (ahora - _lastNetworkUpdate > _networkThrottleMs) {
+                const estadoAnimacion = agachado ? 'agachado' : (moviendo ? 'caminar' : 'parado');
+
+                // Detectar cambios significativos
+                const dx = Math.abs(posicionJugador.x - _lastSentPos.x);
+                const dz = Math.abs(posicionJugador.z - _lastSentPos.z);
+                const dRot = Math.abs(yaw - _lastSentPos.rotY);
+                const cambioAnimacion = estadoAnimacion !== _lastSentAnimacion;
+
+                // Solo considerar cambio de rotación si el jugador se está moviendo o disparando
+                // Si está quieto (parado), puede mirar alrededor sin rotar el modelo para otros
+                const cambioRotacionRelevante = (moviendo || jugadorDisparando) && dRot > 0.01;
+
+                // Enviar actualización si cambió posición, animación, o rotación (cuando es relevante)
+                if (dx > 0.01 || dz > 0.01 || cambioRotacionRelevante || cambioAnimacion) {
+                    // Calcular rotación real del modelo para enviar
+                    // IMPORTANTE: En primera persona, el yaw está invertido (+Math.PI) por el sistema de cámara,
+                    // pero el modelo debe aparecer correctamente orientado para otros jugadores
+                    let rotEnvio = _lastSentPos.rotY; // Por defecto, mantener última rotación enviada
+
+                    if (terceraPersona) {
+                        // En tercera persona, aplicar compensación según estado
+                        if (jugadorDisparando) {
+                            // Cuando dispara, usar yaw - Math.PI para compensar inversión
+                            rotEnvio = yaw - Math.PI;
+                        } else if (moviendo) {
+                            // Cuando se mueve sin disparar, usar dirección de movimiento
+                            rotEnvio = Math.atan2(_vecForward.x, _vecForward.z);
+                        } else {
+                            // Cuando está quieto, mantener última rotación enviada
+                            rotEnvio = _lastSentPos.rotY;
+                        }
+                    } else {
+                        // En primera persona
+                        if (moviendo || jugadorDisparando) {
+                            // Solo actualizar rotación si se mueve o dispara
+                            rotEnvio = yaw - Math.PI;
+                        } else {
+                            // Quieto: mantener última rotación enviada
+                            rotEnvio = _lastSentPos.rotY;
+                        }
+                    }
+
+                    enviarPosicion(posicionJugador.x, posicionJugador.y, posicionJugador.z, rotEnvio, estadoAnimacion);
+
+                    _lastSentPos.x = posicionJugador.x;
+                    _lastSentPos.y = posicionJugador.y;
+                    _lastSentPos.z = posicionJugador.z;
+                    _lastSentPos.rotY = rotEnvio; // Guardar rotación enviada, no el yaw de cámara
+                    _lastSentAnimacion = estadoAnimacion; // Actualizar última animación enviada
+                }
+                _lastNetworkUpdate = ahora;
+            }
         }
 
         // ========================================
@@ -387,7 +469,8 @@ function bucle(tiempo) {
 
                 // Rotar modelo hacia la dirección de movimiento O hacia el frente si dispara
                 if (jugadorDisparando) {
-                    jugadorObj.rotation.y = yaw;
+                    // Restar Math.PI porque en tercera persona el yaw está invertido
+                    jugadorObj.rotation.y = yaw - Math.PI;
                 } else if (moviendo) {
                     const anguloJugador = Math.atan2(_vecForward.x, _vecForward.z);
                     jugadorObj.rotation.y = anguloJugador;
@@ -407,7 +490,7 @@ function bucle(tiempo) {
                         targetX = agachadoRotacionX;
                         targetY = agachadoRotacionY;
                         targetZ = agachadoRotacionZ;
-                    } else if (jugadorMoviendo) {
+                    } else if (moviendo) {
                         targetX = caminarRotacionX;
                         targetY = caminarRotacionY;
                         targetZ = caminarRotacionZ;
@@ -417,21 +500,29 @@ function bucle(tiempo) {
                         targetZ = paradoRotacionZ;
                     }
 
+                    // Función para obtener la diferencia de ángulo más corta
+                    const shortAngleDist = (a0, a1) => {
+                        const max = Math.PI * 2;
+                        const da = (a1 - a0) % max;
+                        return 2 * da % max - da;
+                    };
+
                     // Interpolar rotación suavemente (10 * dt es ~0.3s)
-                    jugadorContenedor.rotation.x += (targetX - jugadorContenedor.rotation.x) * 10 * dt;
-                    jugadorContenedor.rotation.y += (targetY - jugadorContenedor.rotation.y) * 10 * dt;
-                    jugadorContenedor.rotation.z += (targetZ - jugadorContenedor.rotation.z) * 10 * dt;
+                    jugadorContenedor.rotation.x += shortAngleDist(jugadorContenedor.rotation.x, targetX) * 10 * dt;
+                    jugadorContenedor.rotation.y += shortAngleDist(jugadorContenedor.rotation.y, targetY) * 10 * dt;
+                    jugadorContenedor.rotation.z += shortAngleDist(jugadorContenedor.rotation.z, targetZ) * 10 * dt;
                 }
             }
 
             // Posicionar cámara detrás del jugador usando pitch para altura
-            // pitch negativo = mirar arriba = cámara más alta
-            const alturaExtra = -pitch * 3; // Multiplicador para la altura basada en pitch
-            const distanciaExtra = Math.cos(pitch) * distanciaCamara; // Ajustar distancia con pitch
+            // Unificado: Cámara se posiciona en el lado opuesto al vector forward del jugador
+            const alturaExtra = -pitch * 3;
+            const distanciaExtra = Math.cos(pitch) * distanciaCamara;
 
             const camaraOffset = new THREE.Vector3();
-            camaraOffset.x = posicionJugador.x - Math.sin(yaw) * distanciaExtra;
-            camaraOffset.z = posicionJugador.z - Math.cos(yaw) * distanciaExtra;
+            // Invertimos el signo de sin/cos respecto a primera persona para estar detrás
+            camaraOffset.x = posicionJugador.x + Math.sin(yaw) * distanciaExtra;
+            camaraOffset.z = posicionJugador.z + Math.cos(yaw) * distanciaExtra;
             camaraOffset.y = posicionJugador.y + alturaCamara + alturaExtra;
 
             // Suavizar movimiento de cámara
@@ -492,15 +583,48 @@ function bucle(tiempo) {
         // --- LÓGICA DE PROYECTILES SIUM (POOLED) ---
         if (projectilePool) {
             projectilePool.update(dt, function (p) {
-                // Colisión con personajes
-                if (p.owner === 1) { // Bala del humano
-                    if (p.mesh.position.distanceTo(botObj.position) < 1.5) {
-                        finalizar("¡HAS GANADO!");
-                        return true;
+                // 1. Colisión con BOT (Single Player / Local)
+                if (p.owner === 1) {
+                    if (botObj) {
+                        const dx = p.mesh.position.x - botObj.position.x;
+                        const dz = p.mesh.position.z - botObj.position.z;
+                        const distXZ = Math.sqrt(dx * dx + dz * dz);
+                        // Aumentamos altura un 25% extra según solicitud (3.2 -> 4.0)
+                        const h = botAgachado ? 2.5 : 4.5;
+                        if (distXZ < RADIO_BOT && p.mesh.position.y >= 0 && p.mesh.position.y <= h) {
+                            if (!modoMultijugador) finalizar("¡HAS GANADO!");
+                            return true;
+                        }
                     }
-                } else { // Bala del bot
-                    _vecJugador.set(posicionJugador.x, posicionJugador.y, posicionJugador.z);
-                    if (p.mesh.position.distanceTo(_vecJugador) < 1.0) {
+
+                    // 2. Colisión con JUGADORES REMOTOS (Multijugador)
+                    if (modoMultijugador && typeof jugadoresRemotos !== 'undefined') {
+                        let hitId = null;
+                        jugadoresRemotos.forEach((jugador, id) => {
+                            const dx = p.mesh.position.x - jugador.contenedor.position.x;
+                            const dz = p.mesh.position.z - jugador.contenedor.position.z;
+                            const distXZ = Math.sqrt(dx * dx + dz * dz);
+                            const h = jugador.animacionActual === 'agachado' ? 2.5 : 4.5;
+                            if (distXZ < 0.8 && p.mesh.position.y >= 0 && p.mesh.position.y <= h) {
+                                hitId = id;
+                            }
+                        });
+
+                        if (hitId) {
+                            console.log("🎯 ¡IMPACTO DETECTADO LOCALMENTE!", hitId);
+                            if (typeof enviarImpacto === 'function') {
+                                enviarImpacto(hitId, 20); // 20 de daño base
+                            }
+                            return true;
+                        }
+                    }
+                } else if (p.owner === 2) {
+                    // Bala del bot local contra jugador local
+                    const dx = p.mesh.position.x - posicionJugador.x;
+                    const dz = p.mesh.position.z - posicionJugador.z;
+                    const distXZ = Math.sqrt(dx * dx + dz * dz);
+                    const h = agachado ? 2.5 : 4.5;
+                    if (distXZ < RADIO_JUGADOR && p.mesh.position.y >= 0 && p.mesh.position.y <= h) {
                         finalizar("BOT TE ELIMINÓ");
                         return true;
                     }
@@ -620,12 +744,12 @@ function bucle(tiempo) {
             const nZ = botObj.position.z + dirFinalZ * velocidadBot;
 
             // Mover X independiente (permite deslizarse por paredes)
-            if (!colision(nX, botObj.position.z, botDebeAgacharse)) {
+            if (!colision(nX, botObj.position.z, botDebeAgacharse, RADIO_BOT)) {
                 botObj.position.x = nX;
             }
 
             // Mover Z independiente
-            if (!colision(botObj.position.x, nZ, botDebeAgacharse)) {
+            if (!colision(botObj.position.x, nZ, botDebeAgacharse, RADIO_BOT)) {
                 botObj.position.z = nZ;
             }
 
@@ -685,6 +809,13 @@ function bucle(tiempo) {
     // ========================================
     if (grupoArma && terceraPersona) {
         grupoArma.visible = false;
+    }
+
+    // ========================================
+    // ACTUALIZAR JUGADORES REMOTOS (interpolación)
+    // ========================================
+    if (modoMultijugador && typeof actualizarJugadoresRemotos === 'function') {
+        actualizarJugadoresRemotos(dt > 0 ? dt : 0.016);
     }
 
     renderizador.render(escena, camara);
