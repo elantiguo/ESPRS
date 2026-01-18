@@ -34,6 +34,9 @@ class Room {
 
         // Mapa generado para esta sala
         this.mapa = null;
+
+        // Jugadores que han terminado de cargar (para sincronización)
+        this.jugadoresCargados = new Set();
     }
 
     generarCodigo() {
@@ -91,18 +94,10 @@ class Room {
 
         this.estado = 'INICIANDO';
         this.tiempoRestante = this.configuracion.tiempoRonda;
+        this.jugadoresCargados.clear();
 
         // IMPORTANTE: Generar el mapa para esta sala
         this.generarMapa();
-
-        // Cambiar a EN_JUEGO después de la cinemática (10s countdown + 6s recorrido = 16s aprox)
-        // Usamos un margen de 12s para el countdown inicial por ahora
-        setTimeout(() => {
-            if (this.estado === 'INICIANDO') {
-                this.estado = 'EN_JUEGO';
-                console.log(`⚔️ [Room] Sala ${this.id} ahora en estado EN_JUEGO`);
-            }
-        }, 12000);
 
         // Reiniciar jugadores
         const spawns = this.obtenerSpawns();
@@ -113,6 +108,32 @@ class Room {
         }
 
         return { exito: true };
+    }
+
+    marcarJugadorCargado(playerId) {
+        if (this.estado !== 'INICIANDO') return false;
+
+        this.jugadoresCargados.add(playerId);
+
+        // Si todos los jugadores han cargado, iniciar el conteo real
+        if (this.jugadoresCargados.size >= this.jugadores.size) {
+            this.iniciarConteo();
+            return true;
+        }
+
+        return false;
+    }
+
+    iniciarConteo() {
+        // Enviar evento de inicio de conteo a todos
+        // (Esto lo manejará el GameManager/SocketHandler)
+
+        // Cambiar a EN_JUEGO después de la cinemática
+        setTimeout(() => {
+            if (this.estado === 'INICIANDO') {
+                this.estado = 'EN_JUEGO';
+            }
+        }, 12000); // 12s para dar tiempo a la cinemática (10s + margen)
     }
 
     obtenerSpawns() {
@@ -193,7 +214,7 @@ class Room {
         }
 
         this.mapa = mapa;
-        console.log(`🗺️ [Room] Mapa generado para sala ${this.id}`);
+
         return mapa;
     }
 

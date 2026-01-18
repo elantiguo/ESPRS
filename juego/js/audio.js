@@ -26,7 +26,7 @@ function reproducirMusicaMenu() {
     musicaMenu.play()
         .then(() => {
             musicaIniciada = true;
-            console.log("🔊 Música de inicio activada");
+
         })
         .catch(error => {
             console.warn("🔇 Error al reproducir música:", error);

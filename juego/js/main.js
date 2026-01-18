@@ -1,14 +1,27 @@
-function init() {
+async function init() {
     escena = new THREE.Scene();
     escena.background = new THREE.Color(0x010101);
-    escena.fog = new THREE.Fog(0x000000, 5, 45);
+    // CB-50: Desactivar fog en móviles (reduce cálculos de fragment shader)
+    escena.fog = esDispositivoTactil ? null : new THREE.Fog(0x000000, 5, 45);
 
     camara = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
-    renderizador = new THREE.WebGLRenderer({ antialias: true });
+    renderizador = new THREE.WebGLRenderer({
+        antialias: false, // CB-46: Sin antialiasing en TODOS los dispositivos
+        powerPreference: 'high-performance', // CB-47: Preferir GPU de alto rendimiento
+        stencil: false, // CB-48: Desactivar stencil buffer (no lo usamos)
+        depth: true
+    });
+
+    // CB-49: Resolución reducida en móviles (75%) para mejor FPS
+    const pixelRatio = esDispositivoTactil ? Math.min(window.devicePixelRatio, 1) * 0.75 : Math.min(window.devicePixelRatio, 1.5);
+    renderizador.setPixelRatio(pixelRatio);
     renderizador.setSize(window.innerWidth, window.innerHeight);
-    renderizador.shadowMap.enabled = true;
-    renderizador.shadowMap.type = THREE.PCFShadowMap; // Balance entre calidad y rendimiento
+
+    // CB-34: Desactivar sombras completamente en móviles para máximo FPS
+    renderizador.shadowMap.enabled = !esDispositivoTactil;
+    renderizador.shadowMap.type = THREE.BasicShadowMap;
+
     document.body.appendChild(renderizador.domElement);
 
     reloj = new THREE.Clock();
@@ -22,21 +35,33 @@ function init() {
     // Inicializar sistema de caché avanzado
     inicializarGameCache();
 
-    // Luces ambientales
-    const ambiente = new THREE.AmbientLight(0xffffff, 0.15);
+    // Luces ambientales - CB-65: Mayor intensidad en móviles para compensar falta de linterna
+    const ambienteIntensidad = esDispositivoTactil ? 0.5 : 0.15;
+    const ambiente = new THREE.AmbientLight(0xffffff, ambienteIntensidad);
     escena.add(ambiente);
 
-    linterna = new THREE.SpotLight(0xffffff, 1.8, 35, Math.PI / 5, 0.4, 1);
-    linterna.castShadow = true;
-    // Optimización Fase 3: Reducir resolución de sombras (512x512 es suficiente para linterna)
-    linterna.shadow.mapSize.width = 512;
-    linterna.shadow.mapSize.height = 512;
-    linterna.shadow.camera.near = 0.5;
-    linterna.shadow.camera.far = 40;
-    escena.add(linterna);
-    escena.add(linterna.target);
+    // CB-65: Linterna desactivada en móviles (las luces dinámicas son muy costosas)
+    if (!esDispositivoTactil) {
+        linterna = new THREE.SpotLight(0xffffff, 1.8, 35, Math.PI / 5, 0.4, 1);
+        linterna.castShadow = true;
+        const shadowSize = 512;
+        linterna.shadow.mapSize.width = shadowSize;
+        linterna.shadow.mapSize.height = shadowSize;
+        linterna.shadow.camera.near = 0.5;
+        linterna.shadow.camera.far = 40;
+        escena.add(linterna);
+        escena.add(linterna.target);
+    } else {
+        // En móviles, crear un placeholder que no haga nada
+        linterna = {
+            position: { set: () => { }, copy: () => { } },
+            target: { position: { copy: () => { } } }
+        };
+    }
 
-    generarLaberinto();
+    // Generar laberinto de forma asíncrona (progresiva)
+    await generarLaberinto();
+
     inicializarPathfinder(); // Inicializar A* después de generar laberinto
     inicializarBotTactico(); // Inicializar IA táctica
     spawnEntidades();
@@ -68,6 +93,13 @@ function init() {
 
     // Inicializar controles táctiles (Fase 2)
     initControlesTactiles();
+
+    // Cache de elementos UI para optimización
+    _domReloj = document.getElementById('reloj');
+    _domDistanciaBot = document.getElementById('distancia-bot');
+    _domHpTexto = document.getElementById('hp-texto');
+    _domBarraVida = document.getElementById('barra-vida-jugador');
+    _domFPSCounter = document.getElementById('fps-counter'); // CB-35: FPS Counter
 
     // Detección de Pausa (Pointer Lock)
     document.addEventListener('pointerlockchange', () => {
@@ -106,23 +138,45 @@ function manejarMouse(e) {
 }
 
 async function iniciarJuego() {
-    // Si el personaje seleccionado es diferente al cargado, actualizamos modelos
-    // O si es la primera vez (puede no estar cargado aún o queremos asegurar carga)
+    // Mostrar pantalla de carga de match
+    if (matchLoadingTracker) {
+        // 8 assets de modelos + 2 fases de mundo (total 10)
+        matchLoadingTracker.start(10);
+        matchLoadingTracker.startSafetyTimer(30); // 30s de seguridad para mundo + modelos
+        matchLoadingTracker.setStatus("Iniciando arena táctica...");
+    }
+    document.getElementById('match-loading-screen').classList.remove('hidden');
+
+    // 1 & 2. Cargar Modelos y Generar Mundo en PARALELO para optimizar
     try {
-        await actualizarModelosPersonajes();
+        limpiarMundo(); // Limpiar antes de regenerar
+
+        await Promise.all([
+            actualizarModelosPersonajes(),
+            generarLaberinto()
+        ]);
     } catch (error) {
-        console.error("Error cargando modelos al iniciar:", error);
+        console.error("Error durante la carga de la partida:", error);
     }
 
-    // Si el juego ha terminado, reiniciamos la simulación sin recargar página
+    // 3. Reinicializar sistemas que dependen del mapa
+    inicializarPathfinder();
+    inicializarBotTactico();
+
+    // Si el juego ha terminado, reiniciamos la simulación (posiciones, flags, etc.)
     if (juegoTerminado) {
         reiniciarSimulacion();
+    } else {
+        spawnEntidades();
     }
 
     // Ocultar menús y mostrar HUD
     document.getElementById('overlay').classList.add('hidden');
     document.getElementById('hud-juego').classList.remove('hidden');
     ocultarPausa();
+
+    // 4. Finalizar carga
+    if (matchLoadingTracker) matchLoadingTracker.complete();
 
     // Bloquear puntero INMEDIATAMENTE (requiere gesto del usuario, este botón lo es)
     renderizador.domElement.requestPointerLock();
@@ -137,7 +191,7 @@ async function iniciarJuego() {
 }
 
 function iniciarCinematica() {
-    console.log("Fase 1: Identificación de Operativos...");
+
     enCinematica = true;
     faseCinematica = 0; // Fase de identificación (10s)
     activo = false;
@@ -156,7 +210,7 @@ function iniciarCinematica() {
 }
 
 function iniciarRecorridoMapa() {
-    console.log("Fase 2: Escaneo de Perímetro...");
+
     faseCinematica = 1; // Fase de movimiento/animación
     tiempoCinematica = 6; // 6 segundos de recorrido
 
@@ -166,7 +220,7 @@ function iniciarRecorridoMapa() {
 }
 
 function finalizarCinematica() {
-    console.log("Infiltración Completada. ¡A LUCHAR!");
+
     enCinematica = false;
     activo = true;
 
@@ -190,7 +244,7 @@ function finalizarCinematica() {
 }
 
 function reiniciarSimulacion() {
-    console.log("Reiniciando simulación Sium...");
+
 
     // 1. Resetear estados de juego
     juegoTerminado = false;
@@ -250,6 +304,19 @@ var ultimoTiempo = 0;
 var animDebugCount = 0;
 
 // ========================================
+// CB-35: CONTADOR DE FPS
+// ========================================
+var _fpsFrameCount = 0;
+var _fpsLastTime = 0;
+var _fpsDisplay = 0;
+var _domFPSCounter = null;
+
+// ========================================
+// CB-45: CONTADOR PARA LOD DE ANIMACIONES EN MÓVIL
+// ========================================
+var _animFrameCounter = 0;
+
+// ========================================
 // CB-16: THROTTLE DE RED OPTIMIZADO
 // ========================================
 var _lastNetworkUpdate = 0;
@@ -258,11 +325,91 @@ var _lastSentPos = { x: 0, y: 0, z: 0, rotY: 0 };
 var _lastSentAnimacion = 'parado'; // Rastrear último estado de animación enviado
 
 var _lastLogicUpdate = 0;       // Último tiempo de actualización de lógica
-var _logicTickMs = 100;         // Frecuencia de actualización (10Hz)
+// CB-46: Tick de IA MUY lento en móviles (3.3Hz vs 10Hz) para reducir carga CPU drásticamente
+var _logicTickMs = (typeof esDispositivoTactil !== 'undefined' && esDispositivoTactil) ? 300 : 100;
 var _botTargetPos = { x: 0, z: 0 }; // Posición objetivo calculada por la IA
 var _botTargetRot = 0;          // Rotación objetivo calculada por la IA
 var _botTargetMoviendo = false; // Estado de movimiento objetivo para la IA
 var _botTargetAgachado = false; // Estado de agachado objetivo para la IA
+
+// ========================================
+// CACHE DE ELEMENTOS DOM (Optimización)
+// ========================================
+var _domReloj, _domDistanciaBot, _domHpTexto, _domBarraVida;
+var _lastActualRelojValue = -1;
+
+// ========================================
+// CB-27: OBJETOS REUTILIZABLES PARA IA (Zero-allocation)
+// ========================================
+var _botPosCache = { x: 0, z: 0 };
+var _jugadorPosCache = { x: 0, z: 0 };
+
+// ========================================
+// CB-39: VECTOR REUTILIZABLE PARA CÁMARA
+// ========================================
+var _camaraOffset = { x: 0, y: 0, z: 0 };
+
+// ========================================
+// CB-40: FUNCIÓN GLOBAL PARA INTERPOLAR ÁNGULOS
+// ========================================
+function shortAngleDist(a0, a1) {
+    const max = Math.PI * 2;
+    const da = (a1 - a0) % max;
+    return 2 * da % max - da;
+}
+
+// ========================================
+// CB-41: CALLBACK REUTILIZABLE PARA COLISIÓN DE PROYECTILES
+// ========================================
+function _checkProjectileCollision(p) {
+    // 1. Colisión con BOT (Single Player / Local)
+    if (p.owner === 1) {
+        if (botObj) {
+            const dx = p.mesh.position.x - botObj.position.x;
+            const dz = p.mesh.position.z - botObj.position.z;
+            const distSq = dx * dx + dz * dz;
+            const h = botAgachado ? 2.5 : 4.5;
+            if (distSq < RADIO_BOT_SQ && p.mesh.position.y >= 0 && p.mesh.position.y <= h) {
+                if (!modoMultijugador) finalizar("¡HAS GANADO!");
+                return true;
+            }
+        }
+
+        // 2. Colisión con JUGADORES REMOTOS (Multijugador)
+        if (modoMultijugador && typeof jugadoresRemotos !== 'undefined') {
+            let hitId = null;
+            jugadoresRemotos.forEach((jugador, id) => {
+                const dx = p.mesh.position.x - jugador.contenedor.position.x;
+                const dz = p.mesh.position.z - jugador.contenedor.position.z;
+                const distSq = dx * dx + dz * dz;
+                const h = jugador.animacionActual === 'agachado' ? 2.5 : 4.5;
+                if (distSq < 0.64 && p.mesh.position.y >= 0 && p.mesh.position.y <= h) {
+                    hitId = id;
+                }
+            });
+
+            if (hitId) {
+                if (typeof enviarImpacto === 'function') {
+                    enviarImpacto(hitId, 20);
+                }
+                return true;
+            }
+        }
+    } else if (p.owner === 2) {
+        // Bala del bot local contra jugador local
+        const dx = p.mesh.position.x - posicionJugador.x;
+        const dz = p.mesh.position.z - posicionJugador.z;
+        const distSq = dx * dx + dz * dz;
+        // Verificar estado de agachado del jugador usando teclas
+        const jugadorAgachado = teclas['ShiftLeft'] || teclas['ShiftRight'] || teclas['KeyC'];
+        const h = jugadorAgachado ? 2.5 : 4.5;
+        if (distSq < RADIO_JUGADOR_SQ && p.mesh.position.y >= 0 && p.mesh.position.y <= h) {
+            finalizar("BOT TE ELIMINÓ");
+            return true;
+        }
+    }
+    return false;
+}
 
 // ========================================
 // POOL DE VECTORES REUTILIZABLES (Optimización)
@@ -275,17 +422,53 @@ function obtenerTileEnPos(x, z) {
     return laberinto[gz]?.[gx];
 }
 
+// CB-71: Variables para frame rate limiting en móviles
+var _lastFrameTime = 0;
+var _targetFrameTime = esDispositivoTactil ? 33.33 : 0; // 30 FPS en móvil, sin límite en PC
+
 function bucle(tiempo) {
     requestAnimationFrame(bucle);
 
     // Manejar primer frame donde tiempo puede ser undefined
     if (!tiempo) tiempo = 0;
 
+    // CB-71: Frame rate limiter para móviles - Skip frame si es muy pronto
+    if (esDispositivoTactil && _targetFrameTime > 0) {
+        const elapsed = tiempo - _lastFrameTime;
+        if (elapsed < _targetFrameTime) {
+            return; // Skip this frame
+        }
+    }
+    _lastFrameTime = tiempo;
+
     // Calcular delta time real para animaciones
     const dtReal = ultimoTiempo > 0 ? (tiempo - ultimoTiempo) / 1000 : 0.016;
     ultimoTiempo = tiempo;
 
-    const dt = reloj.getDelta();
+    // CB-22: Cap dt para evitar saltos masivos y clipping por lag
+    // CB-72: Cap más estricto en móviles para evitar saltos
+    let dt = reloj.getDelta();
+    const maxDt = esDispositivoTactil ? 0.05 : 0.1;
+    if (dt > maxDt) {
+        dt = maxDt;
+    }
+
+    // CB-35: Actualizar contador de FPS (cada segundo)
+    _fpsFrameCount++;
+    if (tiempo - _fpsLastTime >= 1000) {
+        _fpsDisplay = _fpsFrameCount;
+        _fpsFrameCount = 0;
+        _fpsLastTime = tiempo;
+        if (_domFPSCounter && (activo || enCinematica)) {
+            _domFPSCounter.textContent = `FPS: ${_fpsDisplay}`;
+            _domFPSCounter.classList.remove('hidden');
+        }
+    }
+    // Ocultar contador cuando no está en partida
+    if (_domFPSCounter && !activo && !enCinematica) {
+        _domFPSCounter.classList.add('hidden');
+    }
+
 
     // ========================================
     // LÓGICA DE CINEMÁTICA (PRE-JUEGO)
@@ -311,7 +494,8 @@ function bucle(tiempo) {
             } else {
                 // Siguientes 5 segundos: Identificar Bot o Rival
                 let targetPos = botObj.position;
-                let targetNombre = "BOT TÁCTICO";
+                // Usar nombre del personaje del bot seleccionado aleatoriamente
+                let targetNombre = idPersonajeBot ? (personajesSium[idPersonajeBot]?.nombre || "BOT").toUpperCase() : "BOT";
 
                 if (modoMultijugador && typeof jugadoresRemotos !== 'undefined' && jugadoresRemotos.size > 0) {
                     const rival = jugadoresRemotos.values().next().value;
@@ -356,17 +540,38 @@ function bucle(tiempo) {
         }
     }
 
-    // ========================================
     // CB-04: ACTUALIZAR ANIMACIONES SOLO SI ACTIVO O EN CINEMÁTICA
     // ========================================
-    // Actualizar animaciones del bot solo cuando sea necesario
+    // CB-50: En móviles, actualizar animaciones cada 3 frames para reducir carga CPU (más agresivo)
+    _animFrameCounter++;
+    const animSkipFrames = esDispositivoTactil ? 3 : 1;
+    const shouldUpdateAnims = (_animFrameCounter % animSkipFrames === 0);
+
     if (activo || enCinematica) {
-        if (botMixer) {
-            botMixer.update(dtReal);
+        // CB-51: Ocultar bot si está muy lejos en móviles (ahorra renderizado)
+        if (botObj && esDispositivoTactil) {
+            const _dxBot = botObj.position.x - camara.position.x;
+            const _dzBot = botObj.position.z - camara.position.z;
+            const distBotSq = _dxBot * _dxBot + _dzBot * _dzBot;
+            botObj.visible = !modoMultijugador && distBotSq < 400; // 20m
         }
-        // Actualizar animaciones del jugador si está en tercera persona
-        if (jugadorMixer) {
-            jugadorMixer.update(dtReal);
+
+        // Optimización Sium: Mixers de personajes locales
+        if (botMixer && shouldUpdateAnims && botObj.visible) {
+            // CB-32: LOD de animación más agresivo en móviles (10m en vez de 25m)
+            const _dxBot = botObj.position.x - camara.position.x;
+            const _dzBot = botObj.position.z - camara.position.z;
+            const distBotSq = _dxBot * _dxBot + _dzBot * _dzBot;
+            const lodDistSq = esDispositivoTactil ? 100 : 625; // 10m vs 25m
+            if (distBotSq < lodDistSq) {
+                // Compensar frames saltados multiplicando dtReal
+                botMixer.update(dtReal * animSkipFrames);
+            }
+        }
+
+        if (jugadorMixer && shouldUpdateAnims) {
+            // Compensar frames saltados
+            jugadorMixer.update(dtReal * animSkipFrames);
         }
     }
 
@@ -374,21 +579,22 @@ function bucle(tiempo) {
         // --- LÓGICA DE AGACHARSE (CROUCH) ---
         let quiereAgacharse = teclas['ShiftLeft'] || teclas['ShiftRight'] || teclas['KeyC'];
 
-        // Verificar si estamos bajo un hueco (Tile 2) - usar posicionJugador con radio
+        // Verificar si estamos bajo un hueco (Tile 2)
         let bajoHueco = false;
         const offset = (DIMENSION * ESCALA) / 2;
-        const puntosCheck = [
-            { x: posicionJugador.x, z: posicionJugador.z },
-            { x: posicionJugador.x + RADIO_JUGADOR * 0.5, z: posicionJugador.z },
-            { x: posicionJugador.x - RADIO_JUGADOR * 0.5, z: posicionJugador.z },
-            { x: posicionJugador.x, z: posicionJugador.z + RADIO_JUGADOR * 0.5 },
-            { x: posicionJugador.x, z: posicionJugador.z - RADIO_JUGADOR * 0.5 }
-        ];
 
-        for (let p of puntosCheck) {
-            if (obtenerTileEnPos(p.x, p.z) === 2) {
+        // CB-20: Optimización - Evitar creación de arrays/objetos cada frame
+        // Verificar centro
+        if (obtenerTileEnPos(posicionJugador.x, posicionJugador.z) === 2) {
+            bajoHueco = true;
+        } else {
+            const r = RADIO_JUGADOR * 0.5;
+            // Verificar en cruz (4 puntos cardinales)
+            if (obtenerTileEnPos(posicionJugador.x + r, posicionJugador.z) === 2 ||
+                obtenerTileEnPos(posicionJugador.x - r, posicionJugador.z) === 2 ||
+                obtenerTileEnPos(posicionJugador.x, posicionJugador.z + r) === 2 ||
+                obtenerTileEnPos(posicionJugador.x, posicionJugador.z - r) === 2) {
                 bajoHueco = true;
-                break;
             }
         }
 
@@ -546,13 +752,7 @@ function bucle(tiempo) {
                         targetZ = paradoRotacionZ;
                     }
 
-                    // Función para obtener la diferencia de ángulo más corta
-                    const shortAngleDist = (a0, a1) => {
-                        const max = Math.PI * 2;
-                        const da = (a1 - a0) % max;
-                        return 2 * da % max - da;
-                    };
-
+                    // CB-40: Usar función global en lugar de crear una cada frame
                     // Interpolar rotación suavemente (10 * dt es ~0.3s)
                     jugadorContenedor.rotation.x += shortAngleDist(jugadorContenedor.rotation.x, targetX) * 10 * dt;
                     jugadorContenedor.rotation.y += shortAngleDist(jugadorContenedor.rotation.y, targetY) * 10 * dt;
@@ -565,16 +765,16 @@ function bucle(tiempo) {
             const alturaExtra = -pitch * 3;
             const distanciaExtra = Math.cos(pitch) * distanciaCamara;
 
-            const camaraOffset = new THREE.Vector3();
+            // CB-39: Reutilizar objeto en lugar de crear Vector3 cada frame
             // Invertimos el signo de sin/cos respecto a primera persona para estar detrás
-            camaraOffset.x = posicionJugador.x + Math.sin(yaw) * distanciaExtra;
-            camaraOffset.z = posicionJugador.z + Math.cos(yaw) * distanciaExtra;
-            camaraOffset.y = posicionJugador.y + alturaCamara + alturaExtra;
+            _camaraOffset.x = posicionJugador.x + Math.sin(yaw) * distanciaExtra;
+            _camaraOffset.z = posicionJugador.z + Math.cos(yaw) * distanciaExtra;
+            _camaraOffset.y = posicionJugador.y + alturaCamara + alturaExtra;
 
             // Suavizar movimiento de cámara
-            camara.position.x += (camaraOffset.x - camara.position.x) * 8 * dt;
-            camara.position.y += (camaraOffset.y - camara.position.y) * 8 * dt;
-            camara.position.z += (camaraOffset.z - camara.position.z) * 8 * dt;
+            camara.position.x += (_camaraOffset.x - camara.position.x) * 8 * dt;
+            camara.position.y += (_camaraOffset.y - camara.position.y) * 8 * dt;
+            camara.position.z += (_camaraOffset.z - camara.position.z) * 8 * dt;
 
             // Cámara mira hacia el jugador
             camara.lookAt(posicionJugador.x, posicionJugador.y + 1, posicionJugador.z);
@@ -605,7 +805,10 @@ function bucle(tiempo) {
         }
 
         // Actualizar Linterna Sium (sigue al jugador y apunta hacia donde mira)
-        linterna.position.set(posicionJugador.x, posicionJugador.y, posicionJugador.z);
+        // CB-67: Skip en móviles (no hay linterna real)
+        if (!esDispositivoTactil) {
+            linterna.position.set(posicionJugador.x, posicionJugador.y, posicionJugador.z);
+        }
 
         // Calcular dirección según modo de cámara
         // En tercera persona, la dirección está invertida respecto al yaw
@@ -619,64 +822,20 @@ function bucle(tiempo) {
         }
         const dirY = terceraPersona ? 0 : Math.sin(pitch);
 
-        _vecTarget.set(
-            posicionJugador.x + dirX * 10,
-            posicionJugador.y + dirY * 10,
-            posicionJugador.z + dirZ * 10
-        );
-        linterna.target.position.copy(_vecTarget);
+        // CB-66: Solo actualizar linterna si no es móvil (el placeholder no hace nada de todas formas)
+        if (!esDispositivoTactil) {
+            _vecTarget.set(
+                posicionJugador.x + dirX * 10,
+                posicionJugador.y + dirY * 10,
+                posicionJugador.z + dirZ * 10
+            );
+            linterna.target.position.copy(_vecTarget);
+        }
 
         // --- LÓGICA DE PROYECTILES SIUM (POOLED) ---
+        // CB-41: Usar función global en lugar de crear callback cada frame
         if (projectilePool) {
-            projectilePool.update(dt, function (p) {
-                // 1. Colisión con BOT (Single Player / Local)
-                if (p.owner === 1) {
-                    if (botObj) {
-                        const dx = p.mesh.position.x - botObj.position.x;
-                        const dz = p.mesh.position.z - botObj.position.z;
-                        const distXZ = Math.sqrt(dx * dx + dz * dz);
-                        // Aumentamos altura un 25% extra según solicitud (3.2 -> 4.0)
-                        const h = botAgachado ? 2.5 : 4.5;
-                        if (distXZ < RADIO_BOT && p.mesh.position.y >= 0 && p.mesh.position.y <= h) {
-                            if (!modoMultijugador) finalizar("¡HAS GANADO!");
-                            return true;
-                        }
-                    }
-
-                    // 2. Colisión con JUGADORES REMOTOS (Multijugador)
-                    if (modoMultijugador && typeof jugadoresRemotos !== 'undefined') {
-                        let hitId = null;
-                        jugadoresRemotos.forEach((jugador, id) => {
-                            const dx = p.mesh.position.x - jugador.contenedor.position.x;
-                            const dz = p.mesh.position.z - jugador.contenedor.position.z;
-                            const distXZ = Math.sqrt(dx * dx + dz * dz);
-                            const h = jugador.animacionActual === 'agachado' ? 2.5 : 4.5;
-                            if (distXZ < 0.8 && p.mesh.position.y >= 0 && p.mesh.position.y <= h) {
-                                hitId = id;
-                            }
-                        });
-
-                        if (hitId) {
-                            console.log("🎯 ¡IMPACTO DETECTADO LOCALMENTE!", hitId);
-                            if (typeof enviarImpacto === 'function') {
-                                enviarImpacto(hitId, 20); // 20 de daño base
-                            }
-                            return true;
-                        }
-                    }
-                } else if (p.owner === 2) {
-                    // Bala del bot local contra jugador local
-                    const dx = p.mesh.position.x - posicionJugador.x;
-                    const dz = p.mesh.position.z - posicionJugador.z;
-                    const distXZ = Math.sqrt(dx * dx + dz * dz);
-                    const h = agachado ? 2.5 : 4.5;
-                    if (distXZ < RADIO_JUGADOR && p.mesh.position.y >= 0 && p.mesh.position.y <= h) {
-                        finalizar("BOT TE ELIMINÓ");
-                        return true;
-                    }
-                }
-                return false;
-            });
+            projectilePool.update(dt, _checkProjectileCollision);
         }
 
         // ============================================
@@ -684,23 +843,29 @@ function bucle(tiempo) {
         // ============================================
         if (!modoMultijugador && botObj) {
             const ahora = Date.now();
-            const botPos = { x: botObj.position.x, z: botObj.position.z };
-            const jugadorPos = { x: posicionJugador.x, z: posicionJugador.z };
+            // CB-27: Reutilizar objetos en lugar de crearlos cada frame
+            _botPosCache.x = botObj.position.x;
+            _botPosCache.z = botObj.position.z;
+            _jugadorPosCache.x = posicionJugador.x;
+            _jugadorPosCache.z = posicionJugador.z;
             const esCazador = cazadorId === 2;
 
             // --- BLOQUE DE TICKS DE LÓGICA (10Hz) ---
             if (ahora - _lastLogicUpdate > _logicTickMs) {
-                _vecJugador.set(posicionJugador.x, posicionJugador.y, posicionJugador.z);
-                const distBot = botObj.position.distanceTo(_vecJugador);
+                // CB-61: Calcular distancia manualmente para evitar allocations de distanceTo()
+                const _dxBotDist = botObj.position.x - posicionJugador.x;
+                const _dyBotDist = botObj.position.y - posicionJugador.y;
+                const _dzBotDist = botObj.position.z - posicionJugador.z;
+                const distBot = Math.sqrt(_dxBotDist * _dxBotDist + _dyBotDist * _dyBotDist + _dzBotDist * _dzBotDist);
 
                 // 1. Verificar línea de visión
                 const vision = botTactico.tieneLineaDeVision(
-                    botPos, jugadorPos, laberinto, DIMENSION, ESCALA
+                    _botPosCache, _jugadorPosCache, laberinto, DIMENSION, ESCALA
                 );
 
                 // 2. Actualizar estado del bot y memoria
                 botTactico.actualizarEstado(
-                    botPos, jugadorPos, esCazador, vision.visible, distBot, _logicTickMs / 1000, laberinto, DIMENSION, ESCALA
+                    _botPosCache, _jugadorPosCache, esCazador, vision.visible, distBot, _logicTickMs / 1000, laberinto, DIMENSION, ESCALA
                 );
 
                 // 3. Sistema de disparo inteligente
@@ -711,16 +876,16 @@ function bucle(tiempo) {
                 }
 
                 // 4. Calcular OBJETIVO de movimiento
-                const objetivoBot = botTactico.obtenerObjetivo(botPos, jugadorPos, esCazador, _logicTickMs / 1000);
-                const siguientePunto = pathfinder.obtenerSiguientePunto(botPos, objetivoBot);
-                const botDebeAgacharse = botTactico.debeAgacharse(botPos, laberinto, DIMENSION, ESCALA, siguientePunto);
+                const objetivoBot = botTactico.obtenerObjetivo(_botPosCache, _jugadorPosCache, esCazador, _logicTickMs / 1000);
+                const siguientePunto = pathfinder.obtenerSiguientePunto(_botPosCache, objetivoBot);
+                const botDebeAgacharse = botTactico.debeAgacharse(_botPosCache, laberinto, DIMENSION, ESCALA, siguientePunto);
                 _botTargetAgachado = botDebeAgacharse; // Guardar estado objetivo para el frame loop
 
                 let dirBotRaw;
                 if (siguientePunto) {
-                    dirBotRaw = { x: siguientePunto.x - botPos.x, z: siguientePunto.z - botPos.z };
+                    dirBotRaw = { x: siguientePunto.x - _botPosCache.x, z: siguientePunto.z - _botPosCache.z };
                 } else {
-                    dirBotRaw = { x: objetivoBot.x - botPos.x, z: objetivoBot.z - botPos.z };
+                    dirBotRaw = { x: objetivoBot.x - _botPosCache.x, z: objetivoBot.z - _botPosCache.z };
                 }
 
                 const distMov = Math.sqrt(dirBotRaw.x * dirBotRaw.x + dirBotRaw.z * dirBotRaw.z);
@@ -729,8 +894,8 @@ function bucle(tiempo) {
                     const dirNormX = dirBotRaw.x / distMov;
                     const dirNormZ = dirBotRaw.z / distMov;
                     const dirSuave = botTactico.suavizarDireccion(dirNormX, dirNormZ, _logicTickMs / 1000);
-
-                    botTactico.intentarEsquivar(botPos, proyectilesSium, _logicTickMs / 1000);
+                    const proyectilesActivos = (projectilePool) ? projectilePool.getActive() : [];
+                    botTactico.intentarEsquivar(_botPosCache, proyectilesActivos, _logicTickMs / 1000);
                     const esquive = botTactico.obtenerModificadorEsquive();
 
                     let dirFinalX = dirSuave.x;
@@ -755,8 +920,9 @@ function bucle(tiempo) {
                 }
 
                 // Actualizar textos de HUD cada tick
-                document.getElementById('distancia-bot').innerText =
-                    `${distBot.toFixed(1)}m ${botTactico.getEstadoTexto()}`;
+                if (_domDistanciaBot) {
+                    _domDistanciaBot.innerText = `${distBot.toFixed(1)}m ${botTactico.getEstadoTexto()}`;
+                }
 
                 _lastLogicUpdate = ahora;
             }
@@ -764,7 +930,8 @@ function bucle(tiempo) {
             // --- APLICACIÓN DE MOVIMIENTO SUAVE (En cada frame) ---
             if (botMoviendo) {
                 const velocidadBase = 7 * dt;
-                let velocidadBot = botTactico.obtenerVelocidad(velocidadBase);
+                // CB-56: Pasar timestamp para evitar Date.now() adicional
+                let velocidadBot = botTactico.obtenerVelocidad(velocidadBase, ahora);
 
                 // Aplicar bono de esquive si está esquivando (aunque el cálculo sea por ticks)
                 const esquive = botTactico.obtenerModificadorEsquive();
@@ -813,12 +980,15 @@ function bucle(tiempo) {
             if (typeof jugadoresRemotos !== 'undefined' && jugadoresRemotos.size > 0) {
                 let minDist = 999;
                 jugadoresRemotos.forEach(j => {
-                    const d = j.contenedor.position.distanceTo(posicionJugador);
+                    // CB-61: Cálculo manual de distancia para evitar allocations
+                    const _drx = j.contenedor.position.x - posicionJugador.x;
+                    const _drz = j.contenedor.position.z - posicionJugador.z;
+                    const d = Math.sqrt(_drx * _drx + _drz * _drz);
                     if (d < minDist) minDist = d;
                 });
-                document.getElementById('distancia-bot').innerText = `${minDist.toFixed(1)}m RIVAL`;
+                if (_domDistanciaBot) _domDistanciaBot.innerText = `${minDist.toFixed(1)}m RIVAL`;
             } else {
-                document.getElementById('distancia-bot').innerText = `BUSCANDO...`;
+                if (_domDistanciaBot) _domDistanciaBot.innerText = `BUSCANDO...`;
             }
         }
 
@@ -834,7 +1004,7 @@ function bucle(tiempo) {
         const relojActual = Math.ceil(tiempo);
         if (relojActual !== _lastRelojValue) {
             _lastRelojValue = relojActual;
-            document.getElementById('reloj').innerText = relojActual;
+            if (_domReloj) _domReloj.innerText = relojActual;
         }
     }
 
@@ -1081,5 +1251,6 @@ function toggleTerceraPersona() {
     }
 }
 
-init();
-bucle();
+init().then(() => {
+    bucle();
+});

@@ -116,9 +116,7 @@ var matchLoadingTracker = {
         if (!this.isActive) return;
         this.loaded++;
         this.updateUI();
-        if (this.loaded >= this.total) {
-            this.complete();
-        }
+        // Nota: Manual completion para coordinar con generación de mundo
     },
 
     updateUI: function () {
@@ -129,15 +127,54 @@ var matchLoadingTracker = {
         if (text) text.textContent = percent + '%';
     },
 
-    complete: function () {
+    setStatus: function (text) {
+        const el = document.getElementById('match-loading-subtext');
+        if (el) el.textContent = text;
+    },
+
+    complete: function (force = false) {
+        if (!this.isActive) return;
+
+        // En multijugador, si el cargado es local (no forzado por servidor),
+        // avisar al servidor y esperar a otros.
+        if (typeof modoMultijugador !== 'undefined' && modoMultijugador && !force) {
+            this.setStatus("Esperando a otros jugadores...");
+            if (typeof socket !== 'undefined' && socket.connected) {
+                socket.emit('partida:cargado');
+            }
+            return; // No cerrar la pantalla todavía
+        }
+
         this.isActive = false;
+
+        // Limpiar timeout de seguridad si existía
+        if (this._safetyTimeout) {
+            clearTimeout(this._safetyTimeout);
+            this._safetyTimeout = null;
+        }
+
         setTimeout(() => {
-            document.getElementById('match-loading-screen').classList.add('opacity-0');
-            setTimeout(() => {
-                document.getElementById('match-loading-screen').classList.add('hidden');
-                document.getElementById('match-loading-screen').classList.remove('opacity-0');
-            }, 600);
+            const el = document.getElementById('match-loading-screen');
+            if (el) {
+                el.classList.add('opacity-0');
+                setTimeout(() => {
+                    el.classList.add('hidden');
+                    el.classList.remove('opacity-0');
+                }, 600);
+            }
         }, 500);
+    },
+
+    // Nueva función de seguridad: Forzar cierre tras X segundos
+    _safetyTimeout: null,
+    startSafetyTimer: function (seconds = 15) {
+        if (this._safetyTimeout) clearTimeout(this._safetyTimeout);
+        this._safetyTimeout = setTimeout(() => {
+            if (this.isActive) {
+                console.warn("Safety timeout reached in matchLoadingTracker. Forcing complete.");
+                this.complete();
+            }
+        }, seconds * 1000);
     }
 };
 
@@ -179,15 +216,12 @@ function cargarFBX(url, onLoad) {
     loader.load(fileName,
         (object) => {
             // Debug: mostrar información de materiales y texturas
-            console.log('FBX cargado:', url);
+
             object.traverse((child) => {
                 if (child.isMesh && child.material) {
                     const mats = Array.isArray(child.material) ? child.material : [child.material];
                     mats.forEach((mat, i) => {
-                        console.log(`  Material [${i}]: ${mat.name}, tiene textura: ${mat.map ? 'SI' : 'NO'}`);
-                        if (mat.map) {
-                            console.log(`    Textura: ${mat.map.name || mat.map.image?.src || 'sin nombre'}`);
-                        }
+
                     });
                 }
             });
@@ -219,7 +253,7 @@ function cargarFBXPromise(url) {
 
         loader.load(fileName,
             (object) => {
-                console.log('FBX cargado (Promise):', url);
+
                 assetsLoader.loaded(url.split('/').pop());
                 resolve(object);
             },

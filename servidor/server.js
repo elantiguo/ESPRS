@@ -57,20 +57,7 @@ const socketHandler = new SocketHandler(io, gameManager);
 const PUERTO = process.env.PORT || 3000;
 
 server.listen(PUERTO, () => {
-    console.log('');
-    console.log('╔══════════════════════════════════════════════════╗');
-    console.log('║          🎮 SIUM DUEL - SERVIDOR v2.0            ║');
-    console.log('╠══════════════════════════════════════════════════╣');
-    console.log(`║  🚀 Servidor:    http://localhost:${PUERTO}            ║`);
-    console.log('║  📡 WebSocket:   Activo                          ║');
-    console.log('║  🏠 Salas:       Sistema habilitado              ║');
-    console.log('║  ⚔️  Combate:     Validación en servidor          ║');
-    console.log('╚══════════════════════════════════════════════════╝');
-    console.log('');
-    console.log('📋 Endpoints API:');
-    console.log(`   GET /api/status - Estado del servidor`);
-    console.log(`   GET /api/salas  - Listar salas disponibles`);
-    console.log('');
+
 });
 
 // Manejo de errores

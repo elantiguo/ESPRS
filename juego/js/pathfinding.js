@@ -151,18 +151,22 @@ class Pathfinder {
             }
         }
 
-        // También mantener el sistema de recálculo por frames como backup
-        if (this.rutaCache && this.ultimoDestino && this.ultimoInicio) {
-            const distDestinoChange = Math.abs(destino.x - this.ultimoDestino.x) +
-                Math.abs(destino.y - this.ultimoDestino.y);
-            const distInicioChange = Math.abs(inicio.x - this.ultimoInicio.x) +
-                Math.abs(inicio.y - this.ultimoInicio.y);
-            // Recalcular menos frecuentemente (30 frames = ~0.5 segundos a 60fps)
-            if (distDestinoChange < 2 && distInicioChange < 2 && this.contadorRecalculo < 30) {
+        // CB-58: Usar caché con tolerancia MUY ALTA en móviles para evitar recalcular
+        // CB-44: Tolerancia aumentada para reducir recálculos
+        if (this.ultimoDestino && this.ultimoInicio) {
+            const distDestinoChange = Math.abs(destino.x - this.ultimoDestino.x) + Math.abs(destino.y - this.ultimoDestino.y);
+            const distInicioChange = Math.abs(inicio.x - this.ultimoInicio.x) + Math.abs(inicio.y - this.ultimoInicio.y);
+
+            // CB-58: En móviles, tolerancia de 6 celdas y 60 frames de gracia
+            const tolerancia = (typeof esDispositivoTactil !== 'undefined' && esDispositivoTactil) ? 6 : 4;
+            const framesGracia = (typeof esDispositivoTactil !== 'undefined' && esDispositivoTactil) ? 60 : 45;
+
+            if ((distDestinoChange < tolerancia && distInicioChange < tolerancia - 1) || this.contadorRecalculo < framesGracia) {
                 this.contadorRecalculo++;
                 return this.rutaCache;
             }
         }
+
         this.contadorRecalculo = 0;
         this.ultimoDestino = { ...destino };
         this.ultimoInicio = { ...inicio };
@@ -199,13 +203,11 @@ class Pathfinder {
         const nodoInicio = new Nodo(inicio.x, inicio.y, 0, this.heuristica(inicio, destino));
         abiertos.push(nodoInicio);
 
-        // ========================================
-        // CB-12: LIMITAR ITERACIONES A* PARA EVITAR LAG SPIKES
-        // ========================================
-        // Reducir de 1000 a 250 iteraciones máximas
-        // Esto previene que el A* bloquee el frame por demasiado tiempo
+        // CB-59: LIMITAR ITERACIONES A* MUY AGRESIVAMENTE EN MÓVILES
+        // En un mapa 9x9, la ruta más larga es ~30 nodos. 40 es suficiente para la mayoría de casos.
         let iteraciones = 0;
-        const maxIteraciones = 250;
+        const maxIteraciones = (typeof esDispositivoTactil !== 'undefined' && esDispositivoTactil) ? 40 : 100;
+
 
         while (abiertos.length > 0 && iteraciones < maxIteraciones) {
             iteraciones++;

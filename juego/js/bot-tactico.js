@@ -29,6 +29,10 @@ class BotTactico {
         this.tiempoEsperaWaypoint = 1.5; // Segundos de pausa en cada waypoint
         this.waypointGenerado = false;
 
+        // CB-26: Cache de escondites precalculados para evitar iterar el mapa cada vez
+        this.esconditesCache = []; // Lista de escondites potenciales (precalculados)
+        this.esconditesGenerados = false;
+
         // ========================================
         // SISTEMA DE BÚSQUEDA
         // ========================================
@@ -97,6 +101,8 @@ class BotTactico {
         this.cooldownDisparo = 0;
         this.estaAgachado = false;
         this.waypointGenerado = false; // Forzar regeneración si se desea
+        this.esconditesGenerados = false; // CB-26: Reset cache de escondites
+        this.esconditesCache = [];
         this.puntosVisitados = [];
         this.tiempoBuscando = 0;
         this.puntoEscondite = null;
@@ -149,49 +155,42 @@ class BotTactico {
     // ========================================
 
     encontrarEscondite(botPos, jugadorPos, laberintoRef, dimension, escala) {
-        const offset = (dimension * escala) / 2;
-        let mejorEscondite = null;
-        let mejorPuntuacion = -Infinity;
-
-        // Buscar esquinas y callejones sin salida
-        for (let z = 1; z < dimension - 1; z++) {
-            for (let x = 1; x < dimension - 1; x++) {
-                if (laberintoRef[z]?.[x] !== 0) continue;
-
-                // Contar paredes adyacentes (más paredes = mejor escondite)
-                let paredes = 0;
-                if (laberintoRef[z - 1]?.[x] === 1) paredes++;
-                if (laberintoRef[z + 1]?.[x] === 1) paredes++;
-                if (laberintoRef[z]?.[x - 1] === 1) paredes++;
-                if (laberintoRef[z]?.[x + 1] === 1) paredes++;
-
-                if (paredes >= 2) { // Es una esquina o callejón
-                    const worldX = x * escala - offset;
-                    const worldZ = z * escala - offset;
-
-                    // Calcular distancia al jugador (queremos lejos)
-                    const distJugador = Math.sqrt(
-                        Math.pow(worldX - jugadorPos.x, 2) +
-                        Math.pow(worldZ - jugadorPos.z, 2)
-                    );
-
-                    // Calcular distancia al bot (queremos cerca)
-                    const distBot = Math.sqrt(
-                        Math.pow(worldX - botPos.x, 2) +
-                        Math.pow(worldZ - botPos.z, 2)
-                    );
-
-                    // Puntuación: lejos del jugador pero accesible para el bot
-                    const puntuacion = distJugador * 2 - distBot + paredes * 5;
-
-                    if (puntuacion > mejorPuntuacion && distBot > 5) {
-                        mejorPuntuacion = puntuacion;
-                        mejorEscondite = { x: worldX, z: worldZ };
+        // CB-26: Generar cache de escondites una sola vez por partida
+        if (!this.esconditesGenerados) {
+            const offset = (dimension * escala) / 2;
+            this.esconditesCache = [];
+            for (let z = 1; z < dimension - 1; z++) {
+                for (let x = 1; x < dimension - 1; x++) {
+                    if (laberintoRef[z]?.[x] !== 0) continue;
+                    let paredes = 0;
+                    if (laberintoRef[z - 1]?.[x] === 1) paredes++;
+                    if (laberintoRef[z + 1]?.[x] === 1) paredes++;
+                    if (laberintoRef[z]?.[x - 1] === 1) paredes++;
+                    if (laberintoRef[z]?.[x + 1] === 1) paredes++;
+                    if (paredes >= 2) {
+                        this.esconditesCache.push({
+                            x: x * escala - offset,
+                            z: z * escala - offset,
+                            paredes: paredes
+                        });
                     }
                 }
             }
+            this.esconditesGenerados = true;
         }
 
+        // Buscar el mejor escondite de la cache
+        let mejorEscondite = null;
+        let mejorPuntuacion = -Infinity;
+        for (const e of this.esconditesCache) {
+            const distJugador = Math.sqrt((e.x - jugadorPos.x) ** 2 + (e.z - jugadorPos.z) ** 2);
+            const distBot = Math.sqrt((e.x - botPos.x) ** 2 + (e.z - botPos.z) ** 2);
+            const puntuacion = distJugador * 2 - distBot + e.paredes * 5;
+            if (puntuacion > mejorPuntuacion && distBot > 5) {
+                mejorPuntuacion = puntuacion;
+                mejorEscondite = { x: e.x, z: e.z };
+            }
+        }
         return mejorEscondite;
     }
 
@@ -276,9 +275,10 @@ class BotTactico {
         const dirX = dx / distancia;
         const dirZ = dz / distancia;
 
-        // Paso más inteligente: escala * 0.5 (mitad de un bloque)
-        const pasoSize = escala * 0.5;
+        // CB-33: Paso más grande en móviles para reducir iteraciones
+        const pasoSize = (typeof esDispositivoTactil !== 'undefined' && esDispositivoTactil) ? escala : escala * 0.5;
         const pasos = Math.ceil(distancia / pasoSize);
+
 
         for (let i = 1; i < pasos; i++) {
             const distCheck = i * pasoSize;
@@ -306,6 +306,13 @@ class BotTactico {
     // ========================================
 
     actualizarHistorialJugador(posJugador) {
+        // CB-69: Desactivar historial en móviles (ahorra memoria y GC)
+        if (typeof esDispositivoTactil !== 'undefined' && esDispositivoTactil) {
+            // Solo guardar última posición
+            this.ultimaPosJugador = { x: posJugador.x, z: posJugador.z };
+            return;
+        }
+
         this.historialPosJugador.push({
             x: posJugador.x,
             z: posJugador.z,
@@ -318,6 +325,11 @@ class BotTactico {
     }
 
     predecirPosicionJugador(tiempoAdelante = 0.5) {
+        // CB-69: Sin predicción en móviles
+        if (typeof esDispositivoTactil !== 'undefined' && esDispositivoTactil) {
+            return this.ultimaPosJugador;
+        }
+
         if (this.historialPosJugador.length < 2) {
             return this.ultimaPosJugador;
         }
@@ -342,56 +354,50 @@ class BotTactico {
     // ========================================
 
     detectarProyectilPeligroso(botPos, proyectiles) {
-        // Buscar proyectiles del jugador que vengan hacia el bot
-        let proyectilMasCercano = null;
-        let distanciaMinima = this.rangoDeteccionProyectil;
+        // CB-25: Optimización Zero-Allocation para detección de proyectiles
+        let minAmenazaDistSq = 64; // 8m squared
+        let mejorP = null;
 
-        for (const p of proyectiles) {
-            // Solo esquivar proyectiles del jugador (owner === 1)
-            if (p.owner !== 1) continue;
+        for (let i = 0; i < proyectiles.length; i++) {
+            const p = proyectiles[i];
+            if (p.owner !== 1) continue; // Solo balas del jugador
 
-            const proyectilPos = {
-                x: p.mesh.position.x,
-                z: p.mesh.position.z
-            };
+            const dx = p.mesh.position.x - botPos.x;
+            const dz = p.mesh.position.z - botPos.z;
+            const distSq = dx * dx + dz * dz;
 
-            // Calcular distancia al proyectil
-            const dist = Math.sqrt(
-                Math.pow(proyectilPos.x - botPos.x, 2) +
-                Math.pow(proyectilPos.z - botPos.z, 2)
-            );
-
-            if (dist > this.rangoDeteccionProyectil) continue;
-
-            // Verificar si el proyectil viene hacia el bot
-            const dirProyectil = { x: p.dir.x, z: p.dir.z };
-            const haciaBot = {
-                x: botPos.x - proyectilPos.x,
-                z: botPos.z - proyectilPos.z
-            };
-
-            // Normalizar
-            const magHacia = Math.sqrt(haciaBot.x * haciaBot.x + haciaBot.z * haciaBot.z);
-            if (magHacia > 0) {
-                haciaBot.x /= magHacia;
-                haciaBot.z /= magHacia;
-            }
-
-            // Producto punto para ver si viene hacia nosotros
-            const dotProduct = dirProyectil.x * haciaBot.x + dirProyectil.z * haciaBot.z;
-
-            // Si el producto punto es positivo y alto, viene hacia nosotros
-            if (dotProduct > 0.5 && dist < distanciaMinima) {
-                distanciaMinima = dist;
-                proyectilMasCercano = {
-                    pos: proyectilPos,
-                    dir: dirProyectil,
-                    dist: dist
-                };
+            if (distSq < minAmenazaDistSq) {
+                minAmenazaDistSq = distSq;
+                mejorP = p;
             }
         }
 
-        return proyectilMasCercano;
+        if (!mejorP) return null;
+
+        const dist = Math.sqrt(minAmenazaDistSq);
+        const proyectilPos = { x: mejorP.mesh.position.x, z: mejorP.mesh.position.z };
+        const dirProyectil = { x: mejorP.dir.x, z: mejorP.dir.z };
+        const haciaBot = { x: botPos.x - proyectilPos.x, z: botPos.z - proyectilPos.z };
+
+        // Normalizar vector hacia el bot
+        const magHacia = Math.sqrt(haciaBot.x * haciaBot.x + haciaBot.z * haciaBot.z);
+        if (magHacia > 0) {
+            haciaBot.x /= magHacia;
+            haciaBot.z /= magHacia;
+        }
+
+        // Producto punto para ver si viene hacia nosotros
+        const dotProduct = dirProyectil.x * haciaBot.x + dirProyectil.z * haciaBot.z;
+
+        // Si el producto punto es positivo y alto, viene hacia nosotros
+        if (dotProduct > 0.5) {
+            return {
+                pos: proyectilPos,
+                dir: dirProyectil,
+                dist: dist
+            };
+        }
+        return null;
     }
 
     calcularDireccionEsquive(botPos, proyectil) {
@@ -420,6 +426,11 @@ class BotTactico {
     }
 
     intentarEsquivar(botPos, proyectiles, dt) {
+        // CB-68: Desactivar esquive en móviles (muy costoso)
+        if (typeof esDispositivoTactil !== 'undefined' && esDispositivoTactil) {
+            return false;
+        }
+
         // Actualizar cooldown
         this.cooldownEsquive -= dt;
 
@@ -722,26 +733,28 @@ class BotTactico {
     // ========================================
     // VELOCIDAD SEGÚN ESTADO
     // ========================================
+    // CB-56: Cache de variación para evitar Date.now() cada frame
+    _variacionCache = 1;
+    _ultimoTiempoVariacion = 0;
 
-    obtenerVelocidad(baseVel) {
-        // Añadir pequeña variación para movimiento más natural
-        const variacion = 1 + (Math.sin(Date.now() * 0.003) * 0.1);
-
-        switch (this.estadoActual) {
-            case this.ESTADOS.ATACAR:
-                return baseVel * 1.4 * variacion;
-            case this.ESTADOS.HUIR:
-                return baseVel * 1.5 * variacion; // Más rápido huyendo
-            case this.ESTADOS.PERSEGUIR:
-                return baseVel * 1.2 * variacion;
-            case this.ESTADOS.BUSCAR:
-                return baseVel * 0.9 * variacion; // Más lento buscando
-            case this.ESTADOS.ESCONDERSE:
-                return baseVel * 1.1 * variacion;
-            case this.ESTADOS.PATRULLAR:
-            default:
-                return baseVel * 0.8 * variacion; // Más lento patrullando
+    obtenerVelocidad(baseVel, ahora = 0) {
+        // CB-56: Solo recalcular variación cada ~100ms (no cada frame)
+        if (ahora - this._ultimoTiempoVariacion > 100) {
+            this._variacionCache = 1 + (Math.sin(ahora * 0.003) * 0.1);
+            this._ultimoTiempoVariacion = ahora;
         }
+
+        // CB-57: Usar multiplicador precalculado según estado (evita switch cada frame)
+        const multiplicadores = {
+            [this.ESTADOS.ATACAR]: 1.4,
+            [this.ESTADOS.HUIR]: 1.5,
+            [this.ESTADOS.PERSEGUIR]: 1.2,
+            [this.ESTADOS.BUSCAR]: 0.9,
+            [this.ESTADOS.ESCONDERSE]: 1.1,
+            [this.ESTADOS.PATRULLAR]: 0.8
+        };
+        const mult = multiplicadores[this.estadoActual] || 0.8;
+        return baseVel * mult * this._variacionCache;
     }
 
     // ========================================

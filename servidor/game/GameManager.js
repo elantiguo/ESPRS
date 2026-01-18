@@ -28,7 +28,7 @@ class GameManager {
         this.jugadores.set(socketId, player);
         this.stats.totalConexiones++;
 
-        console.log(`🎮 [GameManager] Jugador conectado: ${socketId}`);
+
         return player;
     }
 
@@ -45,13 +45,13 @@ class GameManager {
                     // Si la sala quedó vacía, eliminarla
                     if (restantes === 0) {
                         this.salas.delete(sala.id);
-                        console.log(`🗑️ [GameManager] Sala ${sala.id} eliminada (vacía)`);
+
                     }
                 }
             }
 
             this.jugadores.delete(socketId);
-            console.log(`👋 [GameManager] Jugador desconectado: ${socketId}`);
+
         }
 
         return player;
@@ -80,7 +80,7 @@ class GameManager {
         sala.agregarJugador(host);
         this.salas.set(sala.id, sala);
 
-        console.log(`🏠 [GameManager] Sala creada: ${sala.id} por ${hostId}`);
+
 
         return { exito: true, sala: sala.toJSON() };
     }
@@ -104,7 +104,7 @@ class GameManager {
         const resultado = sala.agregarJugador(player);
 
         if (resultado.exito) {
-            console.log(`➕ [GameManager] ${playerId} se unió a sala ${codigoSala}`);
+
         }
 
         return { ...resultado, sala: sala.toJSON() };
@@ -122,10 +122,10 @@ class GameManager {
 
             if (restantes === 0) {
                 this.salas.delete(sala.id);
-                console.log(`🗑️ [GameManager] Sala ${sala.id} eliminada`);
+
             }
 
-            console.log(`➖ [GameManager] ${playerId} salió de sala ${sala.id}`);
+
             return { exito: true, salaId: sala.id, restantes };
         }
 
@@ -184,7 +184,7 @@ class GameManager {
 
         if (resultado.exito) {
             this.stats.partidasJugadas++;
-            console.log(`🎮 [GameManager] Partida iniciada en sala ${salaId}`);
+
         }
 
         return { ...resultado, sala: sala.toJSON() };

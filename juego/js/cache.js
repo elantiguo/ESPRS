@@ -5,14 +5,17 @@
 
 class GameCache {
     constructor() {
+        // CB-70: TTL más largo en móviles para reducir recálculos
+        const isMobile = (typeof esDispositivoTactil !== 'undefined' && esDispositivoTactil);
+
         // Caché de rutas A* con TTL
         this.pathCache = new Map();
-        this.pathCacheMaxSize = 20;
-        this.pathCacheTTL = 500; // 500ms de validez
+        this.pathCacheMaxSize = isMobile ? 30 : 20;
+        this.pathCacheTTL = isMobile ? 1000 : 500; // 1 segundo en móvil
 
         // Caché de línea de visión
         this.visionCache = new Map();
-        this.visionCacheTTL = 100; // 100ms - visión cambia rápido
+        this.visionCacheTTL = isMobile ? 300 : 100; // 300ms en móvil
 
         // Caché de colisiones
         this.collisionCache = new Map();

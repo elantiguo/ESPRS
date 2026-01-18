@@ -12,9 +12,9 @@ class SocketHandler {
     }
 
     configurarEventos() {
-        console.log('🚀 [SocketHandler] Sistema de Combate y Abandono v3.0 ACTIVO');
+
         this.io.on('connection', (socket) => {
-            console.log(`🔌 [Socket] Nueva conexión: ${socket.id}`);
+
 
             // Registrar jugador al conectar
             const player = this.gameManager.conectarJugador(socket.id);
@@ -146,6 +146,22 @@ class SocketHandler {
                 if (callback) callback(resultado);
             });
 
+            // Reportar que el cliente terminó de cargar
+            socket.on('partida:cargado', () => {
+                const player = this.gameManager.obtenerJugador(socket.id);
+                if (!player?.salaId) return;
+
+                const sala = this.gameManager.obtenerSala(player.salaId);
+                if (!sala) return;
+
+                const todosCargados = sala.marcarJugadorCargado(socket.id);
+
+                if (todosCargados) {
+                    // Notificar a todos que la partida puede iniciar (conteo cinematográfico)
+                    this.io.to(sala.id).emit('partida:iniciarConteo');
+                }
+            });
+
             // ========================================
             // EVENTOS DE JUEGO
             // ========================================
@@ -175,7 +191,7 @@ class SocketHandler {
                 const player = this.gameManager.obtenerJugador(socket.id);
                 if (!player?.salaId) return;
 
-                console.log(`🔫 [Disparo] ${socket.id} disparó en sala ${player.salaId}`);
+
 
                 // Reenviar disparo a todos en la sala
                 socket.to(player.salaId).emit('jugador:disparo', {
@@ -210,7 +226,7 @@ class SocketHandler {
                 // Distancia máxima de disparo válido (100 unidades)
                 const DISTANCIA_MAX_SQ = 100 * 100; // 10000
                 if (distanciaSq > DISTANCIA_MAX_SQ) {
-                    console.log(`⚠️ Impacto rechazado: distancia² ${distanciaSq.toFixed(0)} > ${DISTANCIA_MAX_SQ}`);
+
                     return;
                 }
 
@@ -218,7 +234,7 @@ class SocketHandler {
                 const dano = data.dano || 20;
                 const vidaRestante = victima.recibirDano(dano);
 
-                console.log(`💥 [Combate] ${socket.id} → ${data.victimaId} | Daño: ${dano} | Vida: ${vidaRestante}`);
+
 
                 // Notificar a todos en la sala
                 this.io.to(atacante.salaId).emit('jugador:danado', {
@@ -230,7 +246,7 @@ class SocketHandler {
 
                 // Si murió
                 if (!victima.vivo) {
-                    console.log(`☠️ [Combate] ${data.victimaId} eliminado por ${socket.id}`);
+
 
                     this.io.to(atacante.salaId).emit('jugador:murio', {
                         jugadorId: data.victimaId,
@@ -247,7 +263,7 @@ class SocketHandler {
                             const ganador = jugadoresVivos[0] || atacante;
                             sala.finalizarPartida(ganador);
 
-                            console.log(`🏆 [Partida] Ganador: ${ganador.id}`);
+
 
                             this.io.to(atacante.salaId).emit('partida:finalizada', {
                                 ganadorId: ganador.id,
@@ -300,7 +316,7 @@ class SocketHandler {
                     const sala = this.gameManager.obtenerSala(salaId);
 
                     if (sala) {
-                        console.log(`🔌 [Socket] Jugador ${socket.id} se desconectó de sala ${salaId} (Estado: ${sala.estado})`);
+
 
                         // Si la partida estaba en curso o iniciando
                         if (sala.estado === 'INICIANDO' || sala.estado === 'EN_JUEGO') {
@@ -308,13 +324,13 @@ class SocketHandler {
                             const jugadoresEnSala = Array.from(sala.jugadores.values());
                             const restantes = jugadoresEnSala.filter(p => p.id !== socket.id);
 
-                            console.log(`📊 [Partida] Jugadores en sala: ${jugadoresEnSala.length}, Restantes: ${restantes.length}`);
+
 
                             if (restantes.length === 1) {
                                 const ganador = restantes[0];
                                 sala.finalizarPartida(ganador);
 
-                                console.log(`🏆 [Partida] Ganador por abandono detectado: ${ganador.id}`);
+
 
                                 this.io.to(salaId).emit('partida:finalizada', {
                                     ganadorId: ganador.id,
@@ -333,7 +349,7 @@ class SocketHandler {
                 }
 
                 this.gameManager.desconectarJugador(socket.id);
-                console.log(`🔌 [Socket] Desconexión FINALIZADA y procesada para: ${socket.id}`);
+
             });
         });
     }

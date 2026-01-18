@@ -10,7 +10,10 @@
 // ========================================
 // CONFIGURACIÓN DE RED
 // ========================================
-var SERVIDOR_URL = window.location.origin; // Se ajusta automáticamente (localhost o Render)
+var SERVIDOR_URL = (window.location.origin.includes('tauri') || window.location.protocol === 'file:')
+    ? 'http://localhost:3000' // O la URL de tu servidor en producción
+    : window.location.origin;
+
 var socket = null;
 var modoMultijugador = false;
 var miSocketId = null;
@@ -32,7 +35,8 @@ var networkCallbacks = {
     onPartidaIniciando: null,
     onJugadorDanado: null,
     onJugadorMurio: null,
-    onPartidaFinalizada: null
+    onPartidaFinalizada: null,
+    onInicioConteo: null
 };
 
 // ========================================
@@ -40,7 +44,7 @@ var networkCallbacks = {
 // ========================================
 function conectarServidor(callback) {
     if (socket && socket.connected) {
-        console.log('⚠️ Ya conectado al servidor');
+
         if (callback) callback({ exito: true, yaConectado: true });
         return;
     }
@@ -52,7 +56,7 @@ function conectarServidor(callback) {
     });
 
     socket.on('connect', () => {
-        console.log('✅ Conectado al servidor:', socket.id);
+
         miSocketId = socket.id;
         modoMultijugador = true;
 
@@ -67,7 +71,7 @@ function conectarServidor(callback) {
     });
 
     socket.on('disconnect', () => {
-        console.log('❌ Desconectado del servidor');
+
         modoMultijugador = false;
         salaActual = null;
         limpiarJugadoresRemotos();
@@ -85,7 +89,7 @@ function conectarServidor(callback) {
     // ========================================
 
     socket.on('sala:jugadorUnido', (data) => {
-        console.log('🎮 Nuevo jugador en sala:', data.jugador.id);
+
         salaActual = data.sala;
         crearJugadorRemoto(data.jugador);
 
@@ -93,7 +97,7 @@ function conectarServidor(callback) {
     });
 
     socket.on('sala:jugadorSalio', (data) => {
-        console.log('👋 Jugador salió de sala:', data.jugadorId);
+
         removerJugadorRemoto(data.jugadorId);
 
         if (networkCallbacks.onJugadorSalio) networkCallbacks.onJugadorSalio(data);
@@ -105,18 +109,18 @@ function conectarServidor(callback) {
     });
 
     socket.on('sala:todosListos', () => {
-        console.log('✅ Todos los jugadores están listos!');
+
     });
 
     socket.on('partida:iniciando', (data) => {
-        console.log('🎮 ¡Partida iniciando!');
+
         salaActual = data.sala;
 
         // IMPORTANTE: Guardar el mapa recibido del servidor
         if (data.mapa) {
             if (typeof window !== 'undefined') {
                 window.mapaServidor = data.mapa;
-                console.log('🗺️ Mapa recibido del servidor:', data.mapa.length + 'x' + data.mapa[0].length);
+
             }
         }
 
@@ -130,6 +134,10 @@ function conectarServidor(callback) {
         if (networkCallbacks.onPartidaIniciando) networkCallbacks.onPartidaIniciando(data);
     });
 
+    socket.on('partida:iniciarConteo', () => {
+        if (networkCallbacks.onInicioConteo) networkCallbacks.onInicioConteo();
+    });
+
     // ========================================
     // EVENTOS DE JUEGO
     // ========================================
@@ -139,7 +147,7 @@ function conectarServidor(callback) {
     });
 
     socket.on('jugador:disparo', (data) => {
-        console.log('💥 Disparo de:', data.id);
+
         renderizarDisparoRemoto(data);
     });
 
@@ -181,7 +189,7 @@ function conectarServidor(callback) {
     socket.on('jugador:cambioPersonaje', (data) => {
         const info = jugadoresRemotos.get(data.jugadorId);
         if (info) {
-            console.log(`👤 Jugador ${data.jugadorId} cambió skin a: ${data.personaje}`);
+
 
             // Guardar posición actual para heredarla
             const x = info.contenedor.position.x;
@@ -208,7 +216,7 @@ function conectarServidor(callback) {
     // ========================================
 
     socket.on('partida:finalizada', (data) => {
-        console.log(`🏆 Partida finalizada! Ganador: ${data.ganadorId}`);
+
 
         const esGanador = data.ganadorId === miSocketId;
 
@@ -234,7 +242,7 @@ function crearSala(nombre, callback) {
     socket.emit('sala:crear', { nombre }, (resultado) => {
         if (resultado.exito) {
             salaActual = resultado.sala;
-            console.log('🏠 Sala creada:', resultado.sala.id);
+
             if (networkCallbacks.onSalaCreada) networkCallbacks.onSalaCreada(resultado);
         }
         if (callback) callback(resultado);
@@ -250,7 +258,7 @@ function unirseASala(codigo, callback) {
     socket.emit('sala:unirse', { codigo: codigo.toUpperCase() }, (resultado) => {
         if (resultado.exito) {
             salaActual = resultado.sala;
-            console.log('➕ Unido a sala:', resultado.sala.id);
+
 
             // Crear modelos para jugadores existentes
             resultado.sala.jugadores.forEach(j => {
@@ -477,7 +485,7 @@ function crearJugadorRemoto(data) {
         });
     }
 
-    console.log(`👤 Jugador remoto creado con FBX: ${data.id}`);
+
 }
 
 function actualizarJugadorRemoto(data) {
@@ -545,7 +553,7 @@ function removerJugadorRemoto(id) {
             escena.remove(jugador.contenedor);
         }
         jugadoresRemotos.delete(id);
-        console.log(`🗑️ Jugador remoto removido: ${id}`);
+
     }
 }
 
@@ -571,9 +579,6 @@ function actualizarJugadoresRemotos(deltaTime) {
         // Suavizado de posición
         jugador.contenedor.position.lerp(jugador.posicionObjetivo, SUAVIZADO * deltaTime);
 
-        // Suavizado de posición
-        jugador.contenedor.position.lerp(jugador.posicionObjetivo, SUAVIZADO * deltaTime);
-
         // Suavizado de rotación (Shortest Path Angle Lerp)
         const a0 = jugador.contenedor.rotation.y;
         const a1 = jugador.rotacionObjetivo;
@@ -583,16 +588,20 @@ function actualizarJugadoresRemotos(deltaTime) {
 
         jugador.contenedor.rotation.y += shortDist * SUAVIZADO * deltaTime;
 
-        // Optimización Fase 3: Gestión dinámica de luces
+        // Optimización Fase 3: Gestión dinámica de luces y animaciones
+        const distSq = jugador.contenedor.position.distanceToSquared(camara.position);
+
         // Solo activar luz si el jugador está en un radio de 20 metros
         if (jugador.luz) {
-            const distSq = jugador.contenedor.position.distanceToSquared(camara.position);
             jugador.luz.visible = distSq < 400; // 20 * 20
         }
 
-        // Update Mixer
+        // Update Mixer (Optimización: solo si está cerca o es mobile/high-end)
+        // CB-04: Animaciones remotas throttled por distancia
         if (jugador.mixer) {
-            jugador.mixer.update(deltaTime);
+            if (!esDispositivoTactil || distSq < 625) { // 25 metros
+                jugador.mixer.update(deltaTime);
+            }
         }
     });
 }
@@ -608,19 +617,18 @@ function renderizarDisparoRemoto(data) {
     // ACTIVAR ANIMACIÓN DE DISPARO DEL JUGADOR REMOTO
     // ========================================
     const jugadorRemoto = jugadoresRemotos.get(data.id);
-    console.log(`📥 [Disparo Remoto] Recibido de: ${data.id}`, jugadorRemoto ? '✅ Jugador encontrado' : '❌ Jugador NO encontrado');
+
 
     if (jugadorRemoto && jugadorRemoto.mixer) {
         // Buscar animaciones de disparo si existen
         const personajeId = jugadorRemoto.personaje || 'agente';
         const pData = personajesSium[personajeId];
 
-        console.log(`   Personaje: ${personajeId}, tiene disparo: ${pData?.modelos?.disparo ? 'SÍ' : 'NO'}`);
-        console.log(`   Animación ya cargada: ${jugadorRemoto.animaciones.disparar ? 'SÍ' : 'NO'}`);
+
 
         if (pData && pData.modelos.disparo && !jugadorRemoto.animaciones.disparar) {
             // Cargar animación de disparo si no está cargada
-            console.log(`   🔄 Cargando animación de disparo...`);
+
             if (typeof cargarFBX === 'function') {
                 cargarFBX(pData.modelos.disparo, (animFbx) => {
                     if (animFbx.animations && animFbx.animations.length > 0) {
@@ -630,7 +638,7 @@ function renderizarDisparoRemoto(data) {
                         const action = jugadorRemoto.mixer.clipAction(animFbx.animations[0]);
                         jugadorRemoto.animaciones.disparar = action;
 
-                        console.log(`   ✅ Animación cargada, reproduciendo...`);
+
                         // Reproducir animación
                         reproducirAnimacionDisparoRemoto(jugadorRemoto);
                     } else {
@@ -640,7 +648,7 @@ function renderizarDisparoRemoto(data) {
             }
         } else if (jugadorRemoto.animaciones.disparar) {
             // Si ya está cargada, reproducirla directamente
-            console.log(`   ▶️ Reproduciendo animación ya cargada...`);
+
             reproducirAnimacionDisparoRemoto(jugadorRemoto);
         } else {
             console.warn(`   ⚠️ No se puede cargar/reproducir la animación de disparo`);
@@ -669,12 +677,10 @@ function renderizarDisparoRemoto(data) {
     // Crear proyectil visual (owner = 3 para indicar que es remoto)
     projectilePool.acquire(3, origen, direccion);
 
-    // Flash de disparo remoto (color naranja/rojo para diferenciar)
-    const flash = new THREE.PointLight(0xff4400, 4, 10);
-    flash.position.set(data.origenX, data.origenY, data.origenZ);
-    if (typeof escena !== 'undefined') {
-        escena.add(flash);
-        setTimeout(() => escena.remove(flash), 50);
+    // Flash de disparo remoto (color naranja/rojo para diferenciar) (Pooled)
+    if (flashPool) {
+        _vecTarget.set(data.origenX, data.origenY, data.origenZ);
+        flashPool.show(_vecTarget, 0xff4400);
     }
 }
 
@@ -703,7 +709,7 @@ function reproducirAnimacionDisparoRemoto(jugadorRemoto) {
     disparoAction.setEffectiveTimeScale(1.8);
     disparoAction.play();
 
-    console.log(`🎬 Animación de disparo reproducida para jugador remoto: ${jugadorRemoto.id}`);
+
 
     // Restaurar pesos después de la animación
     setTimeout(() => {
@@ -737,7 +743,7 @@ function medirLatencia(callback) {
     ultimoPing = Date.now();
     socket.emit('ping', () => {
         latenciaActual = Date.now() - ultimoPing;
-        console.log(`📡 Latencia: ${latenciaActual}ms`);
+
         if (callback) callback(latenciaActual);
     });
 }
@@ -819,17 +825,14 @@ function mostrarResultadoPartida(esGanador, data) {
 }
 
 function actualizarHUD() {
-    const barraVida = document.getElementById('barra-vida-jugador');
-    const textoHP = document.getElementById('hp-texto');
-
-    if (barraVida) {
-        barraVida.style.width = `${vidaJugador}%`;
+    if (_domBarraVida) {
+        _domBarraVida.style.width = `${vidaJugador}%`;
         // Cambiar color según vida
-        if (vidaJugador < 30) barraVida.style.backgroundColor = '#ef4444';
-        else if (vidaJugador < 60) barraVida.style.backgroundColor = '#f59e0b';
-        else barraVida.style.backgroundColor = '#22c55e';
+        if (vidaJugador < 30) _domBarraVida.style.backgroundColor = '#ef4444';
+        else if (vidaJugador < 60) _domBarraVida.style.backgroundColor = '#f59e0b';
+        else _domBarraVida.style.backgroundColor = '#22c55e';
     }
-    if (textoHP) {
-        textoHP.textContent = `${Math.ceil(vidaJugador)} HP`;
+    if (_domHpTexto) {
+        _domHpTexto.textContent = `${Math.ceil(vidaJugador)} HP`;
     }
 }

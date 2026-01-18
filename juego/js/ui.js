@@ -106,7 +106,7 @@ function seleccionarPersonaje(id) {
         enviarPersonaje(id);
     }
 
-    console.log("Personaje seleccionado:", p.nombre);
+
 }
 
 // --- Sistema de Partículas del Menu ---
@@ -419,61 +419,11 @@ function configurarCallbacksLobby() {
         verificarTodosListos();
     };
 
-    networkCallbacks.onPartidaIniciando = (data) => {
-        console.log('🎮 [UI] Partida iniciando, regenerando mapa con datos del servidor...');
-
-        // IMPORTANTE: Regenerar todo el mundo con el mapa del servidor
-        if (data.mapa) {
-            // Limpiar el laberinto actual de la escena
-            escena.children.filter(obj =>
-                obj instanceof THREE.InstancedMesh ||
-                (obj instanceof THREE.Mesh && obj.geometry instanceof THREE.PlaneGeometry)
-            ).forEach(obj => escena.remove(obj));
-
-            // Regenerar laberinto con el mapa del servidor
-            generarLaberinto(); // Ahora usará window.mapaServidor
-
-            // Reinicializar pathfinding con el nuevo mapa
-            if (typeof inicializarPathfinder === 'function') {
-                inicializarPathfinder();
-            }
-
-            // Reinicializar IA táctica
-            if (typeof inicializarBotTactico === 'function') {
-                inicializarBotTactico();
-            }
-
-            // Respawnear entidades en las posiciones correctas
-            if (typeof spawnEntidades === 'function') {
-                // Limpiar entidades anteriores primero
-                if (jugadorObj) escena.remove(jugadorObj);
-                if (botObj) escena.remove(botObj);
-
-                // Encontrar mi posición asignada por el servidor
-                const miId = typeof obtenerMiId === 'function' ? obtenerMiId() : null;
-                const datosYo = data.sala.jugadores.find(j => j.id === miId);
-
-                if (datosYo) {
-                    console.log(`📍 Posición de spawn asignada: ${datosYo.x}, ${datosYo.z}`);
-                    spawnEntidades(datosYo.x, datosYo.z);
-                } else {
-                    spawnEntidades();
-                }
-            }
-        }
-
-        // Ocultar menú y mostrar HUD (Pero esperar a los modelos)
-        const iniciarFlow = async () => {
-            // Mostrar pantalla de carga de match
-            document.getElementById('match-loading-screen').classList.remove('hidden');
-
-            // Esperar a que los modelos se carguen
-            try {
-                if (typeof actualizarModelosPersonajes === 'function') {
-                    await actualizarModelosPersonajes();
-                }
-            } catch (e) {
-                console.error("Error cargando modelos en multijugador:", e);
+    networkCallbacks.onInicioConteo = () => {
+        // Ejecutar la parte final del flujo de inicio cuando el servidor da luz verde
+        const finalizarCarga = async () => {
+            if (typeof matchLoadingTracker !== 'undefined') {
+                matchLoadingTracker.complete(true); // Forzar cierre
             }
 
             // Ocultar overlay
@@ -489,6 +439,57 @@ function configurarCallbacksLobby() {
             if (typeof iniciarCinematica === 'function') {
                 renderizador.domElement.requestPointerLock();
                 iniciarCinematica();
+            }
+        };
+        finalizarCarga();
+    };
+
+    networkCallbacks.onPartidaIniciando = async (data) => {
+
+
+        // Ocultar menú y mostrar HUD (Pero esperar a los modelos)
+        const iniciarFlow = async () => {
+            // Mostrar pantalla de carga de match
+            if (typeof matchLoadingTracker !== 'undefined') {
+                matchLoadingTracker.start(10); // 8 modelos + 2 mundo
+                matchLoadingTracker.startSafetyTimer(45); // Más tiempo para multi
+                matchLoadingTracker.setStatus("Sincronizando modelos...");
+            }
+            document.getElementById('match-loading-screen').classList.remove('hidden');
+
+            // 1. Esperar a que los modelos se carguen
+            try {
+                if (typeof actualizarModelosPersonajes === 'function') {
+                    await actualizarModelosPersonajes();
+                }
+            } catch (e) {
+                console.error("Error cargando modelos en multijugador:", e);
+            }
+
+            // 2. Regenerar mundo (ahora asíncrono)
+            if (data.mapa) {
+                if (typeof matchLoadingTracker !== 'undefined') matchLoadingTracker.setStatus("Generando arquitectura...");
+                limpiarMundo();
+                await generarLaberinto();
+
+                // Reinicializar sistemas que dependen del mapa
+                if (typeof inicializarPathfinder === 'function') inicializarPathfinder();
+                if (typeof inicializarBotTactico === 'function') inicializarBotTactico();
+
+                // Respawnear entidades
+                if (typeof spawnEntidades === 'function') {
+                    if (jugadorObj) escena.remove(jugadorObj);
+                    if (botObj) escena.remove(botObj);
+                    const miId = typeof obtenerMiId === 'function' ? obtenerMiId() : null;
+                    const datosYo = data.sala.jugadores.find(j => j.id === miId);
+                    if (datosYo) spawnEntidades(datosYo.x, datosYo.z);
+                    else spawnEntidades();
+                }
+            }
+
+            // Reportar al tracker que terminamos (pero no cerrará hasta onInicioConteo)
+            if (typeof matchLoadingTracker !== 'undefined') {
+                matchLoadingTracker.complete();
             }
         };
 

@@ -105,7 +105,8 @@ var personajesSium = {
 };
 
 var idPersonajeSeleccionado = localStorage.getItem('sium_personaje_id') || 'agente';
-var idPersonajeCargado = idPersonajeSeleccionado;
+var idPersonajeCargado = null; // Inicializar en null para forzar la primera carga
+var estaCargandoPersonaje = false; // Bloqueo para evitar cargas duplicadas
 
 // Escala de los personajes (agregado para ajuste fácil)
 var ESCALA_PERSONAJE = 0.001;
@@ -114,6 +115,8 @@ var ESCALA_AGACHADO = 0.00075;
 // Radios de colisión
 const RADIO_JUGADOR = 0.8;
 const RADIO_BOT = 0.8;
+const RADIO_JUGADOR_SQ = RADIO_JUGADOR * RADIO_JUGADOR;
+const RADIO_BOT_SQ = RADIO_BOT * RADIO_BOT;
 
 // Lista de proyectiles activos Sium
 var proyectilesSium = [];
@@ -135,6 +138,7 @@ var botModelo = null;       // Modelo 3D del bot
 var botMoviendo = null;    // Estado de movimiento del bot
 var botAgachado = null;    // Estado de agachado del bot
 var botArmaObj = null;      // Referencia al arma del bot para ocultarla
+var idPersonajeBot = null;  // ID del personaje aleatorio asignado al bot
 
 // ========================================
 // SISTEMA DE CÁMARA PRIMERA/TERCERA PERSONA
@@ -144,6 +148,8 @@ var jugadorObj = null;          // Grupo contenedor del jugador para tercera per
 var jugadorModelo = null;       // Modelo 3D del jugador
 var jugadorMixer = null;        // AnimationMixer del jugador
 var jugadorAnimaciones = {};    // Animaciones del jugador {caminar: [], parado: [], agachado: [], disparar: []}
+var jugadorAnimsBase = [];      // Cache de todas las animaciones base (para optimizar disparos)
+var botAnimsBase = [];          // Cache de todas las animaciones base del bot
 var jugadorMoviendo = null;    // Estado de movimiento del jugador
 var jugadorAgachado = null;    // Estado de agachado del jugador
 var jugadorArmaObj = null;      // Referencia al arma del jugador para ocultarla
@@ -182,9 +188,11 @@ var _lastRelojValue = -1;       // Cache del valor del reloj
 
 // --- Ticks de Lógica e IA (Fase 1) ---
 var _lastLogicUpdate = 0;       // Último tiempo de actualización de lógica
-var _logicTickMs = 100;         // Frecuencia de actualización (10Hz)
+// CB-31: Frecuencia de IA mucho más baja en móviles (3Hz vs 5Hz en desktop)
+var _logicTickMs = (typeof esDispositivoTactil !== 'undefined' && esDispositivoTactil) ? 333 : 200;
 var _botTargetPos = { x: 0, z: 0 }; // Posición objetivo calculada por la IA
 var _botTargetRot = 0;          // Rotación objetivo calculada por la IA
+
 
 // ========================================
 // POOL DE VECTORES REUTILIZABLES (Optimización)
