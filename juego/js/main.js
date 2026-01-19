@@ -760,7 +760,7 @@ function bucle(tiempo) {
         // Se activa cuando hay movimiento lateral (A/D), incluso combinado con W/S
         if (terceraPersona && typeof activarStrafeJugador === 'function') {
             if (moviendoLateral !== 0 && !agachado) {
-                activarStrafeJugador(moviendoLateral);
+                activarStrafeJugador(moviendoLateral, moviendoAdelante);
             } else if (jugadorStrafing) {
                 activarStrafeJugador(0); // Desactivar strafe
             }

@@ -175,12 +175,12 @@ async function cargarModelosPersonaje(idJugador) {
     jugadorContenedor = null;
     jugadorModelo = null;
     jugadorMixer = null;
-    jugadorAnimaciones = { caminar: [], parado: [], agachado: [], disparar: [], dispararCaminando: [], strafe: [], saltar: [], saltarLateral: [] };
+    jugadorAnimaciones = { caminar: [], parado: [], agachado: [], disparar: [], dispararCaminando: [], strafe: [], strafeCombinado: [], strafeCombinadoIzq: [], strafeCombinadoDer: [], saltar: [], saltarLateral: [] };
 
     botContenedor = null;
     botModelo = null;
     botMixer = null;
-    botAnimaciones = { caminar: [], parado: [], agachado: [], disparar: [], dispararCaminando: [], strafe: [], saltar: [], saltarLateral: [] };
+    botAnimaciones = { caminar: [], parado: [], agachado: [], disparar: [], dispararCaminando: [], strafe: [], strafeCombinado: [], strafeCombinadoIzq: [], strafeCombinadoDer: [], saltar: [], saltarLateral: [] };
 
     const personData = personajesSium[idJugador];
     const models = personData.modelos;
@@ -447,22 +447,67 @@ async function cargarModelosPersonaje(idJugador) {
             );
         }
 
-        // Disparo Caminando del Bot
-        if (modelsBot.disparoCaminando) {
+        // --- Strafe Combinado Lateralizado (NUEVO) ---
+        // Izquierda (W+A)
+        if (models.strafeCombinadoIzq) {
             promisesOpcionales.push(
-                cargarFBXPromise(modelsBot.disparoCaminando).then(obj => {
+                cargarFBXPromise(models.strafeCombinadoIzq).then(obj => {
+                    limpiarAnimacionesEscala(obj.animations);
+                    obj.animations.forEach(anim => {
+                        if (jugadorMixer) {
+                            const action = jugadorMixer.clipAction(anim);
+                            action.setLoop(THREE.LoopRepeat);
+                            jugadorAnimaciones.strafeCombinadoIzq.push(action);
+                        }
+                    });
+                    console.log(`[Sium] Animación strafe combinado IZQ cargada para jugador`);
+                }).catch(err => console.warn('[Sium] No se pudo cargar animación strafe combinado IZQ:', err))
+            );
+        }
+        // Derecha (W+S / W+D)
+        if (models.strafeCombinadoDer) {
+            promisesOpcionales.push(
+                cargarFBXPromise(models.strafeCombinadoDer).then(obj => {
+                    limpiarAnimacionesEscala(obj.animations);
+                    obj.animations.forEach(anim => {
+                        if (jugadorMixer) {
+                            const action = jugadorMixer.clipAction(anim);
+                            action.setLoop(THREE.LoopRepeat);
+                            jugadorAnimaciones.strafeCombinadoDer.push(action);
+                        }
+                    });
+                    console.log(`[Sium] Animación strafe combinado DER cargada para jugador`);
+                }).catch(err => console.warn('[Sium] No se pudo cargar animación strafe combinado DER:', err))
+            );
+        }
+
+        // --- Versión Bot ---
+        if (modelsBot.strafeCombinadoIzq) {
+            promisesOpcionales.push(
+                cargarFBXPromise(modelsBot.strafeCombinadoIzq).then(obj => {
                     limpiarAnimacionesEscala(obj.animations);
                     obj.animations.forEach(anim => {
                         if (botMixer) {
                             const action = botMixer.clipAction(anim);
-                            action.setLoop(THREE.LoopOnce);
-                            action.clampWhenFinished = true;
-                            action.timeScale = 2.0;
-                            botAnimaciones.dispararCaminando.push(action);
+                            action.setLoop(THREE.LoopRepeat);
+                            botAnimaciones.strafeCombinadoIzq.push(action);
                         }
                     });
-                    console.log(`[Sium] Animación disparo caminando cargada para bot`);
-                }).catch(err => console.warn('[Sium] No se pudo cargar animación disparo caminando para bot:', err))
+                }).catch(err => console.warn('[Sium] No se pudo cargar animación strafe combinado IZQ para bot:', err))
+            );
+        }
+        if (modelsBot.strafeCombinadoDer) {
+            promisesOpcionales.push(
+                cargarFBXPromise(modelsBot.strafeCombinadoDer).then(obj => {
+                    limpiarAnimacionesEscala(obj.animations);
+                    obj.animations.forEach(anim => {
+                        if (botMixer) {
+                            const action = botMixer.clipAction(anim);
+                            action.setLoop(THREE.LoopRepeat);
+                            botAnimaciones.strafeCombinadoDer.push(action);
+                        }
+                    });
+                }).catch(err => console.warn('[Sium] No se pudo cargar animación strafe combinado DER para bot:', err))
             );
         }
 
@@ -840,41 +885,99 @@ var botSaltando = false;      // Estado de salto del bot
 
 // Activa la animación de strafe (caminar lateral) para el jugador
 var _lastStrafeDir = 0; // Guardar última dirección para detectar cambios
+var _lastStrafeAnimId = ''; // Guardar ID de la animación actual
+var _lastStrafeCombinado = false; // Guardar si era combinado
 
-function activarStrafeJugador(direccion) {
-    // direccion: -1 = izquierda, 1 = derecha, 0 = desactivar
-    if (!jugadorMixer || !jugadorAnimaciones.strafe || jugadorAnimaciones.strafe.length === 0) return;
+function activarStrafeJugador(direccion, esCombinado = false) {
+    // direccion: -1 = izquierda (D), 1 = derecha (A), 0 = desactivar
+    // (Nota: En los controles actuales KeyA es moviendoLateral=1 y KeyD es moviendoLateral=-1)
+    if (!jugadorMixer) return;
 
-    if (direccion === 0) {
-        // Desactivar strafe - solo hacer fadeOut, cambiarAnimacionJugador manejará el resto
-        if (jugadorStrafing) {
+    let animsTarget = null;
+    let usaCombinado = false;
+
+    if (direccion !== 0) {
+        if (esCombinado) {
+            // Intentar usar las nuevas animaciones lateralizadas si existen
+            if (direccion === 1 && jugadorAnimaciones.strafeCombinadoDer && jugadorAnimaciones.strafeCombinadoDer.length > 0) {
+                animsTarget = jugadorAnimaciones.strafeCombinadoDer;
+                usaCombinado = true;
+            } else if (direccion === -1 && jugadorAnimaciones.strafeCombinadoIzq && jugadorAnimaciones.strafeCombinadoIzq.length > 0) {
+                animsTarget = jugadorAnimaciones.strafeCombinadoIzq;
+                usaCombinado = true;
+            } else if (jugadorAnimaciones.strafeCombinado && jugadorAnimaciones.strafeCombinado.length > 0) {
+                // Fallback a la combinada única
+                animsTarget = jugadorAnimaciones.strafeCombinado;
+                usaCombinado = true;
+            }
+        }
+
+        // Si no se eligió combinada o no existe, usar strafe normal
+        if (!animsTarget) {
+            animsTarget = jugadorAnimaciones.strafe;
+            usaCombinado = false;
+        }
+    }
+
+    if (!animsTarget || animsTarget.length === 0) {
+        if (direccion === 0 && jugadorStrafing) {
             jugadorStrafing = false;
             _lastStrafeDir = 0;
-            jugadorAnimaciones.strafe.forEach(a => a.fadeOut(0.15));
-            // NO restaurar parado aquí - dejar que cambiarAnimacionJugador lo maneje
+            _lastStrafeCombinado = false;
+            // Detener todo por si acaso
+            [jugadorAnimaciones.strafe, jugadorAnimaciones.strafeCombinado, jugadorAnimaciones.strafeCombinadoIzq, jugadorAnimaciones.strafeCombinadoDer].forEach(set => {
+                if (set) set.forEach(a => a.fadeOut(0.15));
+            });
         }
         return;
     }
 
-    // Si ya está en strafe pero cambió la dirección, actualizar
-    if (jugadorStrafing && _lastStrafeDir === direccion) return;
+    if (direccion === 0) {
+        if (jugadorStrafing) {
+            jugadorStrafing = false;
+            _lastStrafeDir = 0;
+            _lastStrafeCombinado = false;
+            [jugadorAnimaciones.strafe, jugadorAnimaciones.strafeCombinado, jugadorAnimaciones.strafeCombinadoIzq, jugadorAnimaciones.strafeCombinadoDer].forEach(set => {
+                if (set) set.forEach(a => a.fadeOut(0.15));
+            });
+        }
+        return;
+    }
 
-    const duracion = jugadorStrafing ? 0.1 : 0.15; // Transición rápida
+    // Identificador único para el estado actual de strafe (incluyendo qué animación específica se usa)
+    const animId = animsTarget[0]?.getClip().name || '';
+    if (jugadorStrafing && _lastStrafeDir === direccion && _lastStrafeAnimId === animId) return;
+
+    const duracion = jugadorStrafing ? 0.1 : 0.15;
     _lastStrafeDir = direccion;
+    _lastStrafeAnimId = animId;
     jugadorStrafing = true;
 
-    // Resetear estados de animación para forzar actualización al salir del strafe
     jugadorMoviendo = null;
     jugadorAgachado = null;
 
-    // Detener animaciones de caminar/parado/agachado
-    if (jugadorAnimaciones.caminar) jugadorAnimaciones.caminar.forEach(a => a.fadeOut(duracion));
-    if (jugadorAnimaciones.parado) jugadorAnimaciones.parado.forEach(a => a.fadeOut(duracion));
-    if (jugadorAnimaciones.agachado) jugadorAnimaciones.agachado.forEach(a => a.fadeOut(duracion));
+    // Detener otros sets
+    const setsADetener = [
+        jugadorAnimaciones.caminar,
+        jugadorAnimaciones.parado,
+        jugadorAnimaciones.agachado,
+        jugadorAnimaciones.strafe,
+        jugadorAnimaciones.strafeCombinado,
+        jugadorAnimaciones.strafeCombinadoIzq,
+        jugadorAnimaciones.strafeCombinadoDer
+    ];
+    setsADetener.forEach(set => {
+        if (set && set !== animsTarget) set.forEach(a => a.fadeOut(duracion));
+    });
 
-    // Activar strafe con dirección
-    jugadorAnimaciones.strafe.forEach(a => {
-        a.timeScale = direccion; // Negativo = mirror (izquierda)
+    // Activar seleccionado
+    animsTarget.forEach(a => {
+        // Solo aplicar mirror si es el strafe normal (las combinadas ya vienen direccionales)
+        if (animsTarget === jugadorAnimaciones.strafe) {
+            a.timeScale = direccion;
+        } else {
+            a.timeScale = 1.0;
+        }
         a.setEffectiveWeight(1.0);
         a.reset().fadeIn(duracion).play();
     });
@@ -938,25 +1041,49 @@ function activarSaltoJugador() {
 }
 
 // Activa la animación de strafe para el bot
-function activarStrafeBot(direccion) {
-    if (!botMixer || !botAnimaciones.strafe || botAnimaciones.strafe.length === 0) return;
+var _lastStrafeDirBot = 0;
+var _lastStrafeCombinadoBot = false;
 
-    if (direccion === 0) {
-        if (botStrafing) {
+function activarStrafeBot(direccion, esCombinado = false) {
+    if (!botMixer) return;
+
+    const tieneCombinado = botAnimaciones.strafeCombinado && botAnimaciones.strafeCombinado.length > 0;
+    const usaCombinado = tieneCombinado && esCombinado;
+    const animsTarget = usaCombinado ? botAnimaciones.strafeCombinado : botAnimaciones.strafe;
+
+    if (!animsTarget || animsTarget.length === 0) {
+        if (direccion === 0 && botStrafing) {
             botStrafing = false;
-            botAnimaciones.strafe.forEach(a => a.fadeOut(0.2));
+            _lastStrafeDirBot = 0;
+            _lastStrafeCombinadoBot = false;
         }
         return;
     }
 
-    if (botStrafing) return;
+    if (direccion === 0) {
+        if (botStrafing) {
+            botStrafing = false;
+            _lastStrafeDirBot = 0;
+            _lastStrafeCombinadoBot = false;
+            if (botAnimaciones.strafe) botAnimaciones.strafe.forEach(a => a.fadeOut(0.2));
+            if (botAnimaciones.strafeCombinado) botAnimaciones.strafeCombinado.forEach(a => a.fadeOut(0.2));
+        }
+        return;
+    }
 
+    if (botStrafing && _lastStrafeDirBot === direccion && _lastStrafeCombinadoBot === usaCombinado) return;
+
+    const duracion = botStrafing ? 0.1 : 0.25;
+    _lastStrafeDirBot = direccion;
+    _lastStrafeCombinadoBot = usaCombinado;
     botStrafing = true;
-    const duracion = 0.25;
 
-    botAnimsBase.forEach(a => a.fadeOut(duracion));
+    const otrosSets = [botAnimaciones.caminar, botAnimaciones.parado, botAnimaciones.agachado, usaCombinado ? botAnimaciones.strafe : botAnimaciones.strafeCombinado];
+    otrosSets.forEach(set => {
+        if (set) set.forEach(a => a.fadeOut(duracion));
+    });
 
-    botAnimaciones.strafe.forEach(a => {
+    animsTarget.forEach(a => {
         a.timeScale = direccion;
         a.reset().fadeIn(duracion).play();
     });

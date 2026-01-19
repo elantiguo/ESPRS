@@ -64,6 +64,8 @@ var personajesSium = {
             disparo: 'modelos/personajes/rufy/rufy_disparando_pistola_parada.fbx',
             disparoCaminando: 'modelos/personajes/rufy/rufy_disparando_pistola_caminando.fbx',
             strafe: 'modelos/personajes/rufy/rufy_caminar_hacia_lados.fbx',
+            strafeCombinadoIzq: 'modelos/personajes/rufy/rufy_caminar_hacia_lados_combinado_w_a.fbx',
+            strafeCombinadoDer: 'modelos/personajes/rufy/rufy_caminar_hacia_lados_combinado_w_s.fbx',
             saltar: 'modelos/personajes/rufy/rufy_saltando.fbx',
             saltarLateral: 'modelos/personajes/rufy/rufy_saltando_hacia_lados.fbx'
         }
