@@ -57,9 +57,17 @@ async function generarLaberinto() {
             tex.repeat.set(DIMENSION, DIMENSION);
         });
 
-        matPared = new THREE.MeshStandardMaterial({ map: texPared, color: 0x222222, roughness: 0.9 });
-        matHueco = new THREE.MeshStandardMaterial({ map: texPared, color: 0xbbbbbb, roughness: 0.9 });
-        matSuelo = new THREE.MeshStandardMaterial({ map: texSuelo, color: 0x888888, roughness: 0.8 });
+        // OPT-03: Materiales optimizados para móviles
+        // MeshLambertMaterial: Iluminación por vértice (más rápido que Standard, pero con luz)
+        if (esDispositivoTactil) {
+            matPared = new THREE.MeshLambertMaterial({ map: texPared, color: 0x444444 });
+            matHueco = new THREE.MeshLambertMaterial({ map: texPared, color: 0xcccccc });
+            matSuelo = new THREE.MeshLambertMaterial({ map: texSuelo, color: 0x888888 });
+        } else {
+            matPared = new THREE.MeshStandardMaterial({ map: texPared, color: 0x222222, roughness: 0.9 });
+            matHueco = new THREE.MeshStandardMaterial({ map: texPared, color: 0xbbbbbb, roughness: 0.9 });
+            matSuelo = new THREE.MeshStandardMaterial({ map: texSuelo, color: 0x888888, roughness: 0.8 });
+        }
     }
 
     // Primera fase del mundo lista (Texturas y Materiales)
@@ -137,8 +145,9 @@ async function generarLaberinto() {
         geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
         const mesh = new THREE.Mesh(geo, mat);
         mesh.name = "mallaLaberinto";
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+        // OPT-05: Sombras desactivadas en móviles para reducir carga GPU
+        mesh.castShadow = !esDispositivoTactil;
+        mesh.receiveShadow = !esDispositivoTactil;
         return mesh;
     };
 
@@ -158,7 +167,8 @@ async function generarLaberinto() {
         suelo = new THREE.Mesh(geoSuelo, matSuelo);
         suelo.name = "sueloMundo";
         suelo.rotation.x = -Math.PI / 2;
-        suelo.receiveShadow = true;
+        // OPT-05: Sin sombras en móviles
+        suelo.receiveShadow = !esDispositivoTactil;
         escena.add(suelo);
     }
 
@@ -177,6 +187,11 @@ function limpiarMundo() {
         if (obj.geometry) obj.geometry.dispose();
         escena.remove(obj);
     });
+
+    // Invalidar cache de colisión de cámara
+    if (typeof invalidarCacheColisionCamara === 'function') {
+        invalidarCacheColisionCamara();
+    }
 }
 
 function colision(nx, nz, agachado = false, radio = 0.5) {

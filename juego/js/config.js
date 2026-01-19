@@ -29,10 +29,14 @@ var personajesSium = {
         nombre: 'AGENTE',
         desc: 'Ex-agente de operaciones encubiertas. Condenado por 47 asesinatos selectivos.',
         modelos: {
-            caminar: 'modelos/personajes/caminar.fbx',
-            parado: 'modelos/personajes/parado.fbx',
-            agachado: 'modelos/personajes/agachado.fbx',
-            disparo: 'modelos/personajes/disparando_pistola_parado.fbx'
+            caminar: 'modelos/personajes/agente/agente_caminando.fbx',
+            parado: 'modelos/personajes/agente/agente_parado.fbx',
+            agachado: 'modelos/personajes/agente/agente_agachado.fbx',
+            disparo: 'modelos/personajes/agente/agente_disparando_pistola_parado.fbx',
+            disparoCaminando: 'modelos/personajes/agente/agente_disparando_pistola_caminando.fbx',
+            strafe: 'modelos/personajes/agente/agente_caminando_hacia_lados.fbx',
+            saltar: 'modelos/personajes/agente/agente_saltando.fbx',
+            saltarLateral: 'modelos/personajes/agente/agente_saltando_hacia_lados.fbx'
         }
     },
     'cill': {
@@ -40,10 +44,13 @@ var personajesSium = {
         nombre: 'CILL',
         desc: 'Experimento genético fallido. Eliminó a todos sus creadores.',
         modelos: {
-            caminar: 'modelos/personajes/cill_caminar.fbx',
-            parado: 'modelos/personajes/cill_parada.fbx',
-            agachado: 'modelos/personajes/cill_agachada.fbx',
-            disparo: 'modelos/personajes/cill_disparando_pistola_parada.fbx'
+            caminar: 'modelos/personajes/cill/cill_caminar.fbx',
+            parado: 'modelos/personajes/cill/cill_parada.fbx',
+            agachado: 'modelos/personajes/cill/cill_agachada.fbx',
+            disparo: 'modelos/personajes/cill/cill_disparando_pistola_parada.fbx',
+            strafe: 'modelos/personajes/cill/cill_caminar_hacia_lados.fbx',
+            saltar: 'modelos/personajes/cill/cill_saltando.fbx',
+            saltarLateral: 'modelos/personajes/cill/cill_saltando_hacia_lados.fbx'
         }
     },
     'rufy': {
@@ -51,10 +58,14 @@ var personajesSium = {
         nombre: 'RUFY',
         desc: 'Híbrido de conejo. Asesina silenciosa con 200+ víctimas confirmadas.',
         modelos: {
-            caminar: 'modelos/personajes/rufy_caminar.fbx',
-            parado: 'modelos/personajes/rufy_parada.fbx',
-            agachado: 'modelos/personajes/rufy_agachada.fbx',
-            disparo: 'modelos/personajes/rufy_parada_disparando_pistola.fbx'
+            caminar: 'modelos/personajes/rufy/rufy_caminar.fbx',
+            parado: 'modelos/personajes/rufy/rufy_parada.fbx',
+            agachado: 'modelos/personajes/rufy/rufy_agachada.fbx',
+            disparo: 'modelos/personajes/rufy/rufy_disparando_pistola_parada.fbx',
+            disparoCaminando: 'modelos/personajes/rufy/rufy_disparando_pistola_caminando.fbx',
+            strafe: 'modelos/personajes/rufy/rufy_caminar_hacia_lados.fbx',
+            saltar: 'modelos/personajes/rufy/rufy_saltando.fbx',
+            saltarLateral: 'modelos/personajes/rufy/rufy_saltando_hacia_lados.fbx'
         }
     },
     'ivan': {
@@ -156,10 +167,17 @@ var jugadorArmaObj = null;      // Referencia al arma del jugador para ocultarla
 var jugadorContenedor = null;   // Contenedor de rotación del jugador
 var jugadorPuedeDisparar = true; // Control de cadencia de tiro
 var jugadorDisparando = false;  // Indica si el jugador está disparando (para rotación)
+var botDisparando = false;      // Indica si el bot está disparando
 var botContenedor = null;       // Contenedor de rotación del bot
 var posicionJugador = { x: 0, y: 2, z: 0 }; // Posición real del jugador
 var distanciaCamara = 5;        // Distancia de la cámara en tercera persona
 var alturaCamara = 4;           // Altura de la cámara en tercera persona
+
+// --- Saltar ---
+var velocidadVertical = 0;
+const FUERZA_SALTO = 11.5;
+const GRAVEDAD = 30.0;
+var estaEnElSuelo = true;
 
 // ========================================
 // ROTACIÓN DE MODELOS FBX (ajustar aquí)

@@ -29,19 +29,39 @@ async function init() {
     // Inicializar pool de vectores reutilizables
     initVectorPool();
 
+    // Inicializar sistema de colisión de cámara en tercera persona
+    _cameraRaycaster = new THREE.Raycaster();
+    _cameraRayOrigin = new THREE.Vector3();
+    _cameraRayDir = new THREE.Vector3();
+
     // Detección de dispositivo táctil
     detectarDispositivoTactil();
 
     // Inicializar sistema de caché avanzado
     inicializarGameCache();
 
-    // Luces ambientales - CB-65: Mayor intensidad en móviles para compensar falta de linterna
-    const ambienteIntensidad = esDispositivoTactil ? 0.5 : 0.15;
+    // Luces ambientales
+    // En móviles: Reducida para que la linterna sea visible
+    const ambienteIntensidad = esDispositivoTactil ? 0.25 : 0.15;
     const ambiente = new THREE.AmbientLight(0xffffff, ambienteIntensidad);
     escena.add(ambiente);
 
-    // CB-65: Linterna desactivada en móviles (las luces dinámicas son muy costosas)
-    if (!esDispositivoTactil) {
+    // OPT-14: En móviles, agregar luz direccional suave para iluminación base
+    if (esDispositivoTactil) {
+        const luzDireccional = new THREE.DirectionalLight(0xffffff, 0.15);
+        luzDireccional.position.set(5, 10, 5);
+        escena.add(luzDireccional);
+    }
+
+    // Linterna del jugador
+    if (esDispositivoTactil) {
+        // Linterna para móviles: SIN SOMBRAS, pero más intensa para que se note
+        linterna = new THREE.SpotLight(0xffffcc, 2.5, 25, Math.PI / 4, 0.3, 1);
+        linterna.castShadow = false; // Sin sombras en móvil para mejor FPS
+        escena.add(linterna);
+        escena.add(linterna.target);
+    } else {
+        // Linterna completa en PC con sombras
         linterna = new THREE.SpotLight(0xffffff, 1.8, 35, Math.PI / 5, 0.4, 1);
         linterna.castShadow = true;
         const shadowSize = 512;
@@ -51,12 +71,6 @@ async function init() {
         linterna.shadow.camera.far = 40;
         escena.add(linterna);
         escena.add(linterna.target);
-    } else {
-        // En móviles, crear un placeholder que no haga nada
-        linterna = {
-            position: { set: () => { }, copy: () => { } },
-            target: { position: { copy: () => { } } }
-        };
     }
 
     // Generar laberinto de forma asíncrona (progresiva)
@@ -77,6 +91,14 @@ async function init() {
         if (e.code === 'AltLeft' || e.code === 'AltRight') {
             e.preventDefault(); // Evitar que Alt abra menú del navegador
             toggleTerceraPersona();
+        }
+
+        // Saltar con Espacio (si está en el suelo)
+        if (e.code === 'Space' && activo && estaEnElSuelo) {
+            e.preventDefault();
+            if (typeof activarSaltoJugador === 'function') {
+                activarSaltoJugador();
+            }
         }
 
         // Resume with Escape
@@ -284,7 +306,12 @@ function reiniciarSimulacion() {
     // 3. Limpiar proyectiles
     if (projectilePool) projectilePool.clear();
 
-    // 4. Actualizar UI
+    // 5. Resetear estado de salto
+    estaEnElSuelo = true;
+    velocidadVertical = 0;
+    jugadorSaltando = false;
+
+    // 6. Actualizar UI
     actualizarUI();
     document.getElementById('reloj').innerText = tiempo;
     const titulo = document.getElementById('menu-titulo');
@@ -320,7 +347,8 @@ var _animFrameCounter = 0;
 // CB-16: THROTTLE DE RED OPTIMIZADO
 // ========================================
 var _lastNetworkUpdate = 0;
-var _networkThrottleMs = 100;
+// OPT-11: Reducir frecuencia de red en móviles (150ms vs 100ms) para ahorrar batería
+var _networkThrottleMs = (typeof esDispositivoTactil !== 'undefined' && esDispositivoTactil) ? 150 : 100;
 var _lastSentPos = { x: 0, y: 0, z: 0, rotY: 0 };
 var _lastSentAnimacion = 'parado'; // Rastrear último estado de animación enviado
 
@@ -350,12 +378,81 @@ var _jugadorPosCache = { x: 0, z: 0 };
 var _camaraOffset = { x: 0, y: 0, z: 0 };
 
 // ========================================
+// SISTEMA DE COLISIÓN DE CÁMARA (Evitar atravesar paredes)
+// ========================================
+var _cameraRaycaster = null;   // Raycaster para detectar colisiones
+var _cameraRayOrigin = null;   // Origen del rayo (posición del jugador)
+var _cameraRayDir = null;      // Dirección del rayo (hacia la cámara)
+var _cameraMargin = 0.3;       // Margen de seguridad para no pegar la cámara a la pared
+
+// ========================================
 // CB-40: FUNCIÓN GLOBAL PARA INTERPOLAR ÁNGULOS
 // ========================================
 function shortAngleDist(a0, a1) {
     const max = Math.PI * 2;
     const da = (a1 - a0) % max;
     return 2 * da % max - da;
+}
+
+// ========================================
+// COLISIÓN DE CÁMARA EN TERCERA PERSONA
+// Evita que la cámara atraviese paredes usando Raycaster
+// ========================================
+var _cameraColisionObjects = [];  // Cache de objetos de colisión
+var _cameraColisionCacheValid = false;  // Flag para invalidar cache cuando cambia el nivel
+
+function invalidarCacheColisionCamara() {
+    _cameraColisionCacheValid = false;
+    _cameraColisionObjects.length = 0;
+}
+
+function calcularDistanciaCamaraSegura(jugadorPos, offsetX, offsetY, offsetZ) {
+    if (!_cameraRaycaster || !escena) return distanciaCamara;
+
+    // Origen: posición del jugador (ligeramente elevada para evitar colisión con suelo)
+    _cameraRayOrigin.set(jugadorPos.x, jugadorPos.y + 0.5, jugadorPos.z);
+
+    // Dirección: desde el jugador hacia la posición deseada de la cámara
+    _cameraRayDir.set(
+        offsetX - jugadorPos.x,
+        offsetY - jugadorPos.y - 0.5,
+        offsetZ - jugadorPos.z
+    );
+
+    const distanciaDeseada = _cameraRayDir.length();
+    if (distanciaDeseada < 0.1) return distanciaCamara;
+
+    _cameraRayDir.normalize();
+
+    // Configurar el raycaster
+    _cameraRaycaster.set(_cameraRayOrigin, _cameraRayDir);
+    _cameraRaycaster.far = distanciaDeseada + 0.5;
+
+    // Buscar mallas del laberinto para colisión (cacheado)
+    if (!_cameraColisionCacheValid) {
+        _cameraColisionObjects.length = 0;
+        escena.children.forEach(obj => {
+            if (obj.name === "mallaLaberinto" || obj.name === "sueloMundo") {
+                _cameraColisionObjects.push(obj);
+            }
+        });
+        _cameraColisionCacheValid = true;
+    }
+
+    if (_cameraColisionObjects.length === 0) return distanciaDeseada;
+
+    // Hacer el raycast
+    const intersecciones = _cameraRaycaster.intersectObjects(_cameraColisionObjects, false);
+
+    if (intersecciones.length > 0) {
+        // Hay una pared entre el jugador y la cámara
+        const distanciaColision = intersecciones[0].distance;
+        // Retornar la distancia de colisión menos un margen de seguridad
+        return Math.max(0.5, distanciaColision - _cameraMargin);
+    }
+
+    // No hay colisión, usar la distancia deseada
+    return distanciaDeseada;
 }
 
 // ========================================
@@ -584,16 +681,20 @@ function bucle(tiempo) {
         const offset = (DIMENSION * ESCALA) / 2;
 
         // CB-20: Optimización - Evitar creación de arrays/objetos cada frame
+        // FIX: Usar el RADIO_JUGADOR completo para detectar huecos, no solo 0.5
+        // Esto evita que el jugador se quede atascado al salir del hueco,
+        // ya que la detección de hueco coincide con el radio de colisión
+        const rHueco = RADIO_JUGADOR;
+
         // Verificar centro
         if (obtenerTileEnPos(posicionJugador.x, posicionJugador.z) === 2) {
             bajoHueco = true;
         } else {
-            const r = RADIO_JUGADOR * 0.5;
-            // Verificar en cruz (4 puntos cardinales)
-            if (obtenerTileEnPos(posicionJugador.x + r, posicionJugador.z) === 2 ||
-                obtenerTileEnPos(posicionJugador.x - r, posicionJugador.z) === 2 ||
-                obtenerTileEnPos(posicionJugador.x, posicionJugador.z + r) === 2 ||
-                obtenerTileEnPos(posicionJugador.x, posicionJugador.z - r) === 2) {
+            // Verificar en cruz (4 puntos cardinales) con radio completo
+            if (obtenerTileEnPos(posicionJugador.x + rHueco, posicionJugador.z) === 2 ||
+                obtenerTileEnPos(posicionJugador.x - rHueco, posicionJugador.z) === 2 ||
+                obtenerTileEnPos(posicionJugador.x, posicionJugador.z + rHueco) === 2 ||
+                obtenerTileEnPos(posicionJugador.x, posicionJugador.z - rHueco) === 2) {
                 bajoHueco = true;
             }
         }
@@ -621,16 +722,48 @@ function bucle(tiempo) {
         let moviendo = false;
 
         // Controles: A=Derecha, D=Izquierda (Solicitados por usuario)
-        if (teclas['KeyW']) { _vecNextPos.addScaledVector(_vecForward, vel); moviendo = true; }
-        if (teclas['KeyS']) { _vecNextPos.addScaledVector(_vecForward, -vel); moviendo = true; }
-        if (teclas['KeyA']) { _vecNextPos.addScaledVector(_vecRight, vel); moviendo = true; }
-        if (teclas['KeyD']) { _vecNextPos.addScaledVector(_vecRight, -vel); moviendo = true; }
+        let moviendoAdelante = false;
+        let moviendoLateral = 0; // -1=izquierda, 0=nada, 1=derecha
+
+        // Acumular dirección de movimiento (sin aplicar velocidad aún)
+        let movX = 0, movZ = 0;
+
+        if (teclas['KeyW']) { movX += _vecForward.x; movZ += _vecForward.z; moviendo = true; moviendoAdelante = true; }
+        if (teclas['KeyS']) { movX -= _vecForward.x; movZ -= _vecForward.z; moviendo = true; moviendoAdelante = true; }
+        if (teclas['KeyA']) { movX += _vecRight.x; movZ += _vecRight.z; moviendo = true; moviendoLateral = 1; }
+        if (teclas['KeyD']) { movX -= _vecRight.x; movZ -= _vecRight.z; moviendo = true; moviendoLateral = -1; }
 
         // Joystick (Fase 2)
         if (joystickVector.x !== 0 || joystickVector.y !== 0) {
-            _vecNextPos.addScaledVector(_vecForward, vel * joystickVector.y);
-            _vecNextPos.addScaledVector(_vecRight, -vel * joystickVector.x);
+            movX += _vecForward.x * joystickVector.y - _vecRight.x * joystickVector.x;
+            movZ += _vecForward.z * joystickVector.y - _vecRight.z * joystickVector.x;
             moviendo = true;
+            if (Math.abs(joystickVector.y) > 0.3) moviendoAdelante = true;
+            if (Math.abs(joystickVector.x) > 0.5 && !moviendoAdelante) {
+                moviendoLateral = joystickVector.x > 0 ? -1 : 1;
+            }
+        }
+
+        // Normalizar vector de movimiento para evitar que diagonal sea más rápido
+        if (moviendo) {
+            const movMag = Math.sqrt(movX * movX + movZ * movZ);
+            if (movMag > 0) {
+                movX /= movMag;
+                movZ /= movMag;
+            }
+            // Aplicar velocidad normalizada
+            _vecNextPos.x += movX * vel;
+            _vecNextPos.z += movZ * vel;
+        }
+
+        // Activar/desactivar animación de strafe (solo en tercera persona)
+        // Se activa cuando hay movimiento lateral (A/D), incluso combinado con W/S
+        if (terceraPersona && typeof activarStrafeJugador === 'function') {
+            if (moviendoLateral !== 0 && !agachado) {
+                activarStrafeJugador(moviendoLateral);
+            } else if (jugadorStrafing) {
+                activarStrafeJugador(0); // Desactivar strafe
+            }
         }
 
         // Pasamos estado 'agachado' a la colisión con RADIO_JUGADOR
@@ -638,11 +771,27 @@ function bucle(tiempo) {
         if (!colision(_vecNextPos.x, posicionJugador.z, agachado, RADIO_JUGADOR)) {
             posicionJugador.x = _vecNextPos.x;
         }
-        // Mover Z independiente
         if (!colision(posicionJugador.x, _vecNextPos.z, agachado, RADIO_JUGADOR)) {
             posicionJugador.z = _vecNextPos.z;
         }
-        posicionJugador.y = alturaObjetivo;
+
+        // --- LÓGICA DE SALTO Y GRAVEDAD ---
+        if (!estaEnElSuelo) {
+            // Aplicar gravedad
+            velocidadVertical -= GRAVEDAD * dt;
+            posicionJugador.y += velocidadVertical * dt;
+
+            // Verificar aterrizaje
+            if (posicionJugador.y <= alturaObjetivo) {
+                posicionJugador.y = alturaObjetivo;
+                velocidadVertical = 0;
+                estaEnElSuelo = true;
+            }
+        } else {
+            // Si está en el suelo, seguir suavemente la altura objetivo (crouch/stand)
+            // pero permitir que el salto lo eleve
+            posicionJugador.y = alturaObjetivo;
+        }
 
         // ========================================
         // SINCRONIZACIÓN DE RED (enviar posición)
@@ -717,7 +866,10 @@ function bucle(tiempo) {
                 jugadorObj.position.z = posicionJugador.z;
 
                 // Cambiar animación según movimiento y agachado
-                cambiarAnimacionJugador(moviendo, agachado);
+                // (No cambiar si está en strafe para evitar conflictos)
+                if (!jugadorStrafing) {
+                    cambiarAnimacionJugador(moviendo, agachado);
+                }
 
                 // Rotar modelo hacia la dirección de movimiento O hacia el frente si dispara
                 if (jugadorDisparando) {
@@ -766,10 +918,34 @@ function bucle(tiempo) {
             const distanciaExtra = Math.cos(pitch) * distanciaCamara;
 
             // CB-39: Reutilizar objeto en lugar de crear Vector3 cada frame
+            // Calcular posición DESEADA de la cámara (antes de colisión)
             // Invertimos el signo de sin/cos respecto a primera persona para estar detrás
             _camaraOffset.x = posicionJugador.x + Math.sin(yaw) * distanciaExtra;
             _camaraOffset.z = posicionJugador.z + Math.cos(yaw) * distanciaExtra;
             _camaraOffset.y = posicionJugador.y + alturaCamara + alturaExtra;
+
+            // COLISIÓN DE CÁMARA: Verificar si hay paredes entre jugador y cámara
+            const distanciaSegura = calcularDistanciaCamaraSegura(
+                posicionJugador,
+                _camaraOffset.x,
+                _camaraOffset.y,
+                _camaraOffset.z
+            );
+
+            // Si hay colisión, recalcular posición de cámara más cerca del jugador
+            const distanciaDeseada = Math.sqrt(
+                Math.pow(_camaraOffset.x - posicionJugador.x, 2) +
+                Math.pow(_camaraOffset.y - posicionJugador.y, 2) +
+                Math.pow(_camaraOffset.z - posicionJugador.z, 2)
+            );
+
+            if (distanciaSegura < distanciaDeseada) {
+                // Ajustar la posición de la cámara proporcionalmente
+                const factor = distanciaSegura / distanciaDeseada;
+                _camaraOffset.x = posicionJugador.x + (Math.sin(yaw) * distanciaExtra) * factor;
+                _camaraOffset.z = posicionJugador.z + (Math.cos(yaw) * distanciaExtra) * factor;
+                _camaraOffset.y = posicionJugador.y + (alturaCamara + alturaExtra) * factor + 1; // +1 para mantener algo de altura
+            }
 
             // Suavizar movimiento de cámara
             camara.position.x += (_camaraOffset.x - camara.position.x) * 8 * dt;
@@ -783,14 +959,21 @@ function bucle(tiempo) {
             // PRIMERA PERSONA: Cámara en posición del jugador
             camara.position.x = posicionJugador.x;
             camara.position.z = posicionJugador.z;
-            camara.position.y += (alturaObjetivo - camara.position.y) * 10 * dt;
+
+            if (estaEnElSuelo) {
+                // Suavizado suave para agacharse/levantarse
+                camara.position.y += (posicionJugador.y - camara.position.y) * 10 * dt;
+            } else {
+                // Durante el salto, seguimiento directo para evitar latencia visual
+                camara.position.y = posicionJugador.y;
+            }
             camara.rotation.set(pitch, yaw, 0, 'YXZ');
         }
 
-        // Actualizar Brazo Sium (solo visible en primera persona Y moviendo)
+        // Actualizar Brazo Sium (solo visible en primera persona Y moviendo O disparando)
         if (!terceraPersona) {
-            // Mostrar arma solo cuando se mueve
-            grupoArma.visible = moviendo;
+            // Mostrar arma cuando se mueve O cuando dispara
+            grupoArma.visible = moviendo || jugadorDisparando;
 
             grupoArma.position.copy(camara.position);
             grupoArma.rotation.copy(camara.rotation);
@@ -805,32 +988,20 @@ function bucle(tiempo) {
         }
 
         // Actualizar Linterna Sium (sigue al jugador y apunta hacia donde mira)
-        // CB-67: Skip en móviles (no hay linterna real)
-        if (!esDispositivoTactil) {
-            linterna.position.set(posicionJugador.x, posicionJugador.y, posicionJugador.z);
-        }
+        linterna.position.set(posicionJugador.x, posicionJugador.y, posicionJugador.z);
 
         // Calcular dirección según modo de cámara
-        // En tercera persona, la dirección está invertida respecto al yaw
-        let dirX, dirZ;
-        if (terceraPersona) {
-            dirX = Math.sin(yaw);
-            dirZ = Math.cos(yaw);
-        } else {
-            dirX = -Math.sin(yaw) * Math.cos(pitch);
-            dirZ = -Math.cos(yaw) * Math.cos(pitch);
-        }
-        const dirY = terceraPersona ? 0 : Math.sin(pitch);
+        // En ambos modos, la linterna debe seguir la dirección de la mirada (yaw y pitch)
+        const dirX = -Math.sin(yaw) * Math.cos(pitch);
+        const dirZ = -Math.cos(yaw) * Math.cos(pitch);
+        const dirY = Math.sin(pitch);
 
-        // CB-66: Solo actualizar linterna si no es móvil (el placeholder no hace nada de todas formas)
-        if (!esDispositivoTactil) {
-            _vecTarget.set(
-                posicionJugador.x + dirX * 10,
-                posicionJugador.y + dirY * 10,
-                posicionJugador.z + dirZ * 10
-            );
-            linterna.target.position.copy(_vecTarget);
-        }
+        _vecTarget.set(
+            posicionJugador.x + dirX * 10,
+            posicionJugador.y + dirY * 10,
+            posicionJugador.z + dirZ * 10
+        );
+        linterna.target.position.copy(_vecTarget);
 
         // --- LÓGICA DE PROYECTILES SIUM (POOLED) ---
         // CB-41: Usar función global en lugar de crear callback cada frame

@@ -79,11 +79,13 @@ function spawnEntidades(customX = null, customZ = null) {
     // ========================================
     if (!jugadorObj) {
         jugadorObj = new THREE.Group();
-        // Luz azul para el jugador
-        const luzJugador = new THREE.PointLight(0x00aaff, 1.5, 10);
-        luzJugador.name = "luzEntidad";
-        luzJugador.position.set(0, 0, 0);
-        jugadorObj.add(luzJugador);
+        // OPT-02: Luz azul para el jugador (solo en PC - luces dinámicas muy costosas en móvil)
+        if (!esDispositivoTactil) {
+            const luzJugador = new THREE.PointLight(0x00aaff, 1.5, 10);
+            luzJugador.name = "luzEntidad";
+            luzJugador.position.set(0, 0, 0);
+            jugadorObj.add(luzJugador);
+        }
     }
     // Asegurar que esté en la escena (especialmente importante en multijugador tras un reset)
     if (jugadorObj.parent !== escena) escena.add(jugadorObj);
@@ -92,11 +94,13 @@ function spawnEntidades(customX = null, customZ = null) {
 
     if (!botObj) {
         botObj = new THREE.Group();
-        // Luz roja para el bot
-        const luzB = new THREE.PointLight(0xff0000, 2, 12);
-        luzB.name = "luzEntidad";
-        luzB.position.set(0, 2, 0);
-        botObj.add(luzB);
+        // OPT-02: Luz roja para el bot (solo en PC)
+        if (!esDispositivoTactil) {
+            const luzB = new THREE.PointLight(0xff0000, 2, 12);
+            luzB.name = "luzEntidad";
+            luzB.position.set(0, 2, 0);
+            botObj.add(luzB);
+        }
     }
     // Asegurar que esté en la escena
     if (botObj.parent !== escena) escena.add(botObj);
@@ -171,12 +175,12 @@ async function cargarModelosPersonaje(idJugador) {
     jugadorContenedor = null;
     jugadorModelo = null;
     jugadorMixer = null;
-    jugadorAnimaciones = { caminar: [], parado: [], agachado: [], disparar: [] };
+    jugadorAnimaciones = { caminar: [], parado: [], agachado: [], disparar: [], dispararCaminando: [], strafe: [], saltar: [], saltarLateral: [] };
 
     botContenedor = null;
     botModelo = null;
     botMixer = null;
-    botAnimaciones = { caminar: [], parado: [], agachado: [], disparar: [] };
+    botAnimaciones = { caminar: [], parado: [], agachado: [], disparar: [], dispararCaminando: [], strafe: [], saltar: [], saltarLateral: [] };
 
     const personData = personajesSium[idJugador];
     const models = personData.modelos;
@@ -346,11 +350,163 @@ async function cargarModelosPersonaje(idJugador) {
             })
         ];
 
+        // 3b. CARGAR ANIMACIONES OPCIONALES (strafe, saltar) - Solo si el personaje las tiene
+        const promisesOpcionales = [];
+
+        // Strafe del Jugador
+        if (models.strafe) {
+            promisesOpcionales.push(
+                cargarFBXPromise(models.strafe).then(obj => {
+                    limpiarAnimacionesEscala(obj.animations);
+                    obj.animations.forEach(anim => {
+                        if (jugadorMixer) {
+                            const action = jugadorMixer.clipAction(anim);
+                            action.setLoop(THREE.LoopRepeat);
+                            jugadorAnimaciones.strafe.push(action);
+                        }
+                    });
+                    console.log(`[Sium] Animación strafe cargada para jugador`);
+                }).catch(err => console.warn('[Sium] No se pudo cargar animación strafe:', err))
+            );
+        }
+
+        // Saltar del Jugador
+        if (models.saltar) {
+            promisesOpcionales.push(
+                cargarFBXPromise(models.saltar).then(obj => {
+                    limpiarAnimacionesEscala(obj.animations);
+                    obj.animations.forEach(anim => {
+                        if (jugadorMixer) {
+                            const action = jugadorMixer.clipAction(anim);
+                            action.setLoop(THREE.LoopOnce);
+                            action.clampWhenFinished = true;
+                            jugadorAnimaciones.saltar.push(action);
+                        }
+                    });
+                    console.log(`[Sium] Animación saltar cargada para jugador`);
+                }).catch(err => console.warn('[Sium] No se pudo cargar animación saltar:', err))
+            );
+        }
+
+        // Strafe del Bot (si el personaje del bot lo tiene)
+        if (modelsBot.strafe) {
+            promisesOpcionales.push(
+                cargarFBXPromise(modelsBot.strafe).then(obj => {
+                    limpiarAnimacionesEscala(obj.animations);
+                    obj.animations.forEach(anim => {
+                        if (botMixer) {
+                            const action = botMixer.clipAction(anim);
+                            action.setLoop(THREE.LoopRepeat);
+                            botAnimaciones.strafe.push(action);
+                        }
+                    });
+                    console.log(`[Sium] Animación strafe cargada para bot`);
+                }).catch(err => console.warn('[Sium] No se pudo cargar animación strafe para bot:', err))
+            );
+        }
+
+        // Saltar del Bot (si el personaje del bot lo tiene)
+        if (modelsBot.saltar) {
+            promisesOpcionales.push(
+                cargarFBXPromise(modelsBot.saltar).then(obj => {
+                    limpiarAnimacionesEscala(obj.animations);
+                    obj.animations.forEach(anim => {
+                        if (botMixer) {
+                            const action = botMixer.clipAction(anim);
+                            action.setLoop(THREE.LoopOnce);
+                            action.clampWhenFinished = true;
+                            botAnimaciones.saltar.push(action);
+                        }
+                    });
+                    console.log(`[Sium] Animación saltar cargada para bot`);
+                }).catch(err => console.warn('[Sium] No se pudo cargar animación saltar para bot:', err))
+            );
+        }
+
+        // Esperar animaciones opcionales (sin bloquear si fallan)
+        if (promisesOpcionales.length > 0) {
+            await Promise.all(promisesOpcionales);
+        }
+
+        // Disparo Caminando del Jugador
+        if (models.disparoCaminando) {
+            promisesOpcionales.push(
+                cargarFBXPromise(models.disparoCaminando).then(obj => {
+                    limpiarAnimacionesEscala(obj.animations);
+                    obj.animations.forEach(anim => {
+                        if (jugadorMixer) {
+                            const action = jugadorMixer.clipAction(anim);
+                            action.setLoop(THREE.LoopOnce);
+                            action.clampWhenFinished = true;
+                            action.timeScale = 2.0;
+                            jugadorAnimaciones.dispararCaminando.push(action);
+                        }
+                    });
+                    console.log(`[Sium] Animación disparo caminando cargada para jugador`);
+                }).catch(err => console.warn('[Sium] No se pudo cargar animación disparo caminando:', err))
+            );
+        }
+
+        // Disparo Caminando del Bot
+        if (modelsBot.disparoCaminando) {
+            promisesOpcionales.push(
+                cargarFBXPromise(modelsBot.disparoCaminando).then(obj => {
+                    limpiarAnimacionesEscala(obj.animations);
+                    obj.animations.forEach(anim => {
+                        if (botMixer) {
+                            const action = botMixer.clipAction(anim);
+                            action.setLoop(THREE.LoopOnce);
+                            action.clampWhenFinished = true;
+                            action.timeScale = 2.0;
+                            botAnimaciones.dispararCaminando.push(action);
+                        }
+                    });
+                    console.log(`[Sium] Animación disparo caminando cargada para bot`);
+                }).catch(err => console.warn('[Sium] No se pudo cargar animación disparo caminando para bot:', err))
+            );
+        }
+
+        // Salto Lateral del Jugador
+        if (models.saltarLateral) {
+            promisesOpcionales.push(
+                cargarFBXPromise(models.saltarLateral).then(obj => {
+                    limpiarAnimacionesEscala(obj.animations);
+                    obj.animations.forEach(anim => {
+                        if (jugadorMixer) {
+                            const action = jugadorMixer.clipAction(anim);
+                            action.setLoop(THREE.LoopOnce);
+                            action.clampWhenFinished = true;
+                            jugadorAnimaciones.saltarLateral.push(action);
+                        }
+                    });
+                    console.log(`[Sium] Animación salto lateral cargada para jugador`);
+                }).catch(err => console.warn('[Sium] No se pudo cargar animación salto lateral:', err))
+            );
+        }
+
+        // Salto Lateral del Bot
+        if (modelsBot.saltarLateral) {
+            promisesOpcionales.push(
+                cargarFBXPromise(modelsBot.saltarLateral).then(obj => {
+                    limpiarAnimacionesEscala(obj.animations);
+                    obj.animations.forEach(anim => {
+                        if (botMixer) {
+                            const action = botMixer.clipAction(anim);
+                            action.setLoop(THREE.LoopOnce);
+                            action.clampWhenFinished = true;
+                            botAnimaciones.saltarLateral.push(action);
+                        }
+                    });
+                    console.log(`[Sium] Animación salto lateral cargada para bot`);
+                }).catch(err => console.warn('[Sium] No se pudo cargar animación salto lateral para bot:', err))
+            );
+        }
+
         await Promise.all(promisesExtra);
 
         // 4. FINALIZAR CONFIGURACIÓN
-        jugadorAnimsBase = [...jugadorAnimaciones.caminar, ...jugadorAnimaciones.parado, ...jugadorAnimaciones.agachado];
-        botAnimsBase = [...botAnimaciones.caminar, ...botAnimaciones.parado, ...botAnimaciones.agachado];
+        jugadorAnimsBase = [...jugadorAnimaciones.caminar, ...jugadorAnimaciones.parado, ...jugadorAnimaciones.agachado, ...jugadorAnimaciones.strafe];
+        botAnimsBase = [...botAnimaciones.caminar, ...botAnimaciones.parado, ...botAnimaciones.agachado, ...botAnimaciones.strafe];
 
         if (typeof cambiarAnimacionJugador === 'function') cambiarAnimacionJugador(false, false);
         if (typeof cambiarAnimacionBot === 'function') cambiarAnimacionBot(false, false);
@@ -390,6 +546,10 @@ function disparar(quien) {
         // Activar flag de disparo para forzar rotación hacia adelante
         jugadorDisparando = true;
         setTimeout(() => { jugadorDisparando = false; }, 600);
+    } else if (quien === 2) {
+        // Activar flag de disparo para el bot
+        botDisparando = true;
+        setTimeout(() => { botDisparando = false; }, 600);
     }
 
     // Retroceso visual (Primera persona)
@@ -400,88 +560,105 @@ function disparar(quien) {
         // Animación de disparo en tercera persona
         if (terceraPersona && jugadorObj) {
             // Forzar rotación inmediata hacia yaw (donde mira la cámara)
-            // Restar Math.PI porque en tercera persona el yaw está invertido
             jugadorObj.rotation.y = yaw - Math.PI;
 
-            if (jugadorAnimaciones.disparar && jugadorAnimaciones.disparar.length > 0) {
+            // Seleccionar animación: preferir dispararCaminando si se mueve
+            let animsADisparar = (jugadorMoviendo && jugadorAnimaciones.dispararCaminando && jugadorAnimaciones.dispararCaminando.length > 0)
+                ? jugadorAnimaciones.dispararCaminando
+                : jugadorAnimaciones.disparar;
 
+            if (animsADisparar && animsADisparar.length > 0) {
+                // REDUCIR peso de otras animaciones
+                // CB-FIX: Si estamos agachados, mantener el peso de las animaciones de agachado
+                jugadorAnimsBase.forEach(a => {
+                    const isAgachadoAnim = (jugadorAnimaciones.agachado && jugadorAnimaciones.agachado.includes(a));
+                    if (jugadorAgachado && isAgachadoAnim) {
+                        a.setEffectiveWeight(1.0);
+                    } else {
+                        a.setEffectiveWeight(0.1);
+                    }
+                });
 
-                // REDUCIR peso de otras animaciones para que no "anulen" el disparo (Optimizado: usar cache)
-                jugadorAnimsBase.forEach(a => a.setEffectiveWeight(0.1));
-
-                jugadorAnimaciones.disparar.forEach(a => {
+                animsADisparar.forEach(a => {
                     a.stop();
                     a.reset();
                     a.setEffectiveWeight(1.0);
                     a.setEffectiveTimeScale(1.8);
                     a.play();
-
                 });
 
                 // RESTAURAR peso después de un tiempo y limpiar animación
                 setTimeout(() => {
                     jugadorAnimsBase.forEach(a => a.setEffectiveWeight(1.0));
-
-                    // Hacer un fadeOut de la animación de disparo para que no se quede "atrapada"
-                    if (jugadorAnimaciones.disparar) {
-                        jugadorAnimaciones.disparar.forEach(a => a.fadeOut(0.2));
+                    if (animsADisparar) {
+                        animsADisparar.forEach(a => a.fadeOut(0.2));
                     }
-
-
                 }, 450);
             } else if (terceraPersona) {
-                console.warn("  No hay animaciones de disparo cargadas para JUGADOR");
+                console.warn("No hay animaciones de disparo cargadas para JUGADOR");
             }
-        } else {
-            // Animación de disparo para el bot
-            if (botAnimaciones.disparar && botAnimaciones.disparar.length > 0) {
-                botAnimsBase.forEach(a => a.setEffectiveWeight(0.1));
+        }
+    } else if (botObj && quien === 2) {
+        // Animación de disparo para el bot
+        let animsADispararBot = (botMoviendo && botAnimaciones.dispararCaminando && botAnimaciones.dispararCaminando.length > 0)
+            ? botAnimaciones.dispararCaminando
+            : botAnimaciones.disparar;
 
-                botAnimaciones.disparar.forEach(a => {
-                    a.stop();
-                    a.reset();
+        if (animsADispararBot && animsADispararBot.length > 0) {
+            // CB-FIX: Símil para el bot
+            botAnimsBase.forEach(a => {
+                const isAgachadoAnim = (botAnimaciones.agachado && botAnimaciones.agachado.includes(a));
+                if (botAgachado && isAgachadoAnim) {
                     a.setEffectiveWeight(1.0);
-                    a.setEffectiveTimeScale(1.8);
-                    a.play();
-                });
+                } else {
+                    a.setEffectiveWeight(0.1);
+                }
+            });
 
-                setTimeout(() => {
-                    botAnimsBase.forEach(a => a.setEffectiveWeight(1.0));
-                    if (botAnimaciones.disparar) {
-                        botAnimaciones.disparar.forEach(a => a.fadeOut(0.2));
-                    }
-                }, 450);
-            }
+            animsADispararBot.forEach(a => {
+                a.stop();
+                a.reset();
+                a.setEffectiveWeight(1.0);
+                a.setEffectiveTimeScale(1.8);
+                a.play();
+            });
+
+            setTimeout(() => {
+                botAnimsBase.forEach(a => a.setEffectiveWeight(1.0));
+                if (animsADispararBot) {
+                    animsADispararBot.forEach(a => a.fadeOut(0.2));
+                }
+            }, 450);
         }
+    }
 
-        // Calcular posición y dirección para el proyectil
-        _vecTarget.set(0, 0, 0);
+    // Calcular posición y dirección para el proyectil
+    _vecTarget.set(0, 0, 0);
 
-        if (quien === 1) {
-            camara.getWorldDirection(_vecTarget);
-            _vecNextPos.copy(camara.position).addScaledVector(_vecTarget, 1);
-        } else {
-            _vecTarget.subVectors(_vecJugador, botObj.position).normalize();
-            _vecNextPos.copy(botObj.position).addScaledVector(_vecTarget, 1.5);
-        }
+    if (quien === 1) {
+        camara.getWorldDirection(_vecTarget);
+        _vecNextPos.copy(camara.position).addScaledVector(_vecTarget, 1);
+    } else {
+        _vecTarget.subVectors(_vecJugador, botObj.position).normalize();
+        _vecNextPos.copy(botObj.position).addScaledVector(_vecTarget, 1.5);
+    }
 
-        // Obtener proyectil del pool
-        projectilePool.acquire(quien, _vecNextPos, _vecTarget);
+    // Obtener proyectil del pool
+    projectilePool.acquire(quien, _vecNextPos, _vecTarget);
 
-        // ========================================
-        // ENVIAR DISPARO POR RED (solo jugador, no bot)
-        // ========================================
-        if (quien === 1 && modoMultijugador && typeof enviarDisparo === 'function') {
-            enviarDisparo(
-                _vecNextPos.x, _vecNextPos.y, _vecNextPos.z,
-                _vecTarget.x, _vecTarget.y, _vecTarget.z
-            );
-        }
+    // ========================================
+    // ENVIAR DISPARO POR RED (solo jugador, no bot)
+    // ========================================
+    if (quien === 1 && modoMultijugador && typeof enviarDisparo === 'function') {
+        enviarDisparo(
+            _vecNextPos.x, _vecNextPos.y, _vecNextPos.z,
+            _vecTarget.x, _vecTarget.y, _vecTarget.z
+        );
+    }
 
-        // Flash de disparo (Pooled)
-        if (flashPool) {
-            flashPool.show(_vecNextPos, (quien === 1 ? 0xffff00 : 0xff0000));
-        }
+    // Flash de disparo (Pooled)
+    if (flashPool) {
+        flashPool.show(_vecNextPos, (quien === 1 ? 0xffff00 : 0xff0000));
     }
 }
 
@@ -538,7 +715,8 @@ function cambiarAnimacionBot(moviendo, agachado) {
     botAgachado = agachado;
 
     const duracionTransicion = 0.3;
-    const ocultarArma = !moviendo || agachado;
+    // CB-FIX: No ocultar el arma si está disparando
+    const ocultarArma = (!moviendo || agachado) && !botDisparando;
 
     // Mostrar/ocultar arma del modelo
     if (botArmaObj) {
@@ -609,7 +787,8 @@ function cambiarAnimacionJugador(moviendo, agachado) {
     jugadorAgachado = agachado;
 
     const duracionTransicion = 0.3;
-    const ocultarArma = !moviendo || agachado;
+    // CB-FIX: No ocultar el arma si está disparando
+    const ocultarArma = (!moviendo || agachado) && !jugadorDisparando;
 
     if (jugadorArmaObj) {
         jugadorArmaObj.visible = !ocultarArma;
@@ -649,4 +828,161 @@ function cambiarAnimacionJugador(moviendo, agachado) {
             a.reset().fadeIn(duracionTransicion).play();
         }
     }
+}
+
+// ========================================
+// NUEVAS ANIMACIONES: STRAFE Y SALTAR
+// ========================================
+var jugadorStrafing = false;  // Estado de movimiento lateral del jugador
+var jugadorSaltando = false;  // Estado de salto del jugador
+var botStrafing = false;      // Estado de movimiento lateral del bot
+var botSaltando = false;      // Estado de salto del bot
+
+// Activa la animación de strafe (caminar lateral) para el jugador
+var _lastStrafeDir = 0; // Guardar última dirección para detectar cambios
+
+function activarStrafeJugador(direccion) {
+    // direccion: -1 = izquierda, 1 = derecha, 0 = desactivar
+    if (!jugadorMixer || !jugadorAnimaciones.strafe || jugadorAnimaciones.strafe.length === 0) return;
+
+    if (direccion === 0) {
+        // Desactivar strafe - solo hacer fadeOut, cambiarAnimacionJugador manejará el resto
+        if (jugadorStrafing) {
+            jugadorStrafing = false;
+            _lastStrafeDir = 0;
+            jugadorAnimaciones.strafe.forEach(a => a.fadeOut(0.15));
+            // NO restaurar parado aquí - dejar que cambiarAnimacionJugador lo maneje
+        }
+        return;
+    }
+
+    // Si ya está en strafe pero cambió la dirección, actualizar
+    if (jugadorStrafing && _lastStrafeDir === direccion) return;
+
+    const duracion = jugadorStrafing ? 0.1 : 0.15; // Transición rápida
+    _lastStrafeDir = direccion;
+    jugadorStrafing = true;
+
+    // Resetear estados de animación para forzar actualización al salir del strafe
+    jugadorMoviendo = null;
+    jugadorAgachado = null;
+
+    // Detener animaciones de caminar/parado/agachado
+    if (jugadorAnimaciones.caminar) jugadorAnimaciones.caminar.forEach(a => a.fadeOut(duracion));
+    if (jugadorAnimaciones.parado) jugadorAnimaciones.parado.forEach(a => a.fadeOut(duracion));
+    if (jugadorAnimaciones.agachado) jugadorAnimaciones.agachado.forEach(a => a.fadeOut(duracion));
+
+    // Activar strafe con dirección
+    jugadorAnimaciones.strafe.forEach(a => {
+        a.timeScale = direccion; // Negativo = mirror (izquierda)
+        a.setEffectiveWeight(1.0);
+        a.reset().fadeIn(duracion).play();
+    });
+}
+
+// Activa la animación de salto para el jugador
+function activarSaltoJugador() {
+    if (jugadorSaltando || !estaEnElSuelo) return; // Ya está saltando o en el aire
+
+    // --- Mecánica Física (Siempre se ejecuta) ---
+    jugadorSaltando = true;
+    estaEnElSuelo = false;
+    velocidadVertical = FUERZA_SALTO;
+
+    // Retroceso visual del arma en primera persona al saltar
+    if (!terceraPersona && grupoArma) {
+        grupoArma.position.y -= 0.1;
+        grupoArma.rotation.x += 0.05;
+        setTimeout(() => {
+            if (grupoArma) {
+                grupoArma.position.y += 0.1;
+                grupoArma.rotation.x -= 0.05;
+            }
+        }, 200);
+    }
+
+    // --- Animación Visual (Si está disponible) ---
+    // Seleccionar animación: usar saltarLateral si el personaje está en strafe
+    let animsASaltar = (jugadorStrafing && jugadorAnimaciones.saltarLateral && jugadorAnimaciones.saltarLateral.length > 0)
+        ? jugadorAnimaciones.saltarLateral
+        : jugadorAnimaciones.saltar;
+
+    if (!jugadorMixer || !animsASaltar || animsASaltar.length === 0) return;
+
+    const duracion = 0.15;
+
+    // Reducir peso de otras animaciones
+    if (jugadorAnimsBase) {
+        jugadorAnimsBase.forEach(a => a.setEffectiveWeight(0.2));
+    }
+
+    // Activar animación de salto
+    animsASaltar.forEach(a => {
+        a.stop();
+        a.reset();
+        a.setEffectiveWeight(1.0);
+        a.play();
+    });
+
+    // Detectar cuando termina la animación visual (pero la física sigue su curso)
+    const duracionAnim = animsASaltar[0]?.getClip()?.duration || 1.0;
+    setTimeout(() => {
+        jugadorSaltando = false;
+        if (jugadorAnimsBase) {
+            jugadorAnimsBase.forEach(a => a.setEffectiveWeight(1.0));
+        }
+        if (animsASaltar) {
+            animsASaltar.forEach(a => a.fadeOut(0.3));
+        }
+    }, duracionAnim * 1000 - 200);
+}
+
+// Activa la animación de strafe para el bot
+function activarStrafeBot(direccion) {
+    if (!botMixer || !botAnimaciones.strafe || botAnimaciones.strafe.length === 0) return;
+
+    if (direccion === 0) {
+        if (botStrafing) {
+            botStrafing = false;
+            botAnimaciones.strafe.forEach(a => a.fadeOut(0.2));
+        }
+        return;
+    }
+
+    if (botStrafing) return;
+
+    botStrafing = true;
+    const duracion = 0.25;
+
+    botAnimsBase.forEach(a => a.fadeOut(duracion));
+
+    botAnimaciones.strafe.forEach(a => {
+        a.timeScale = direccion;
+        a.reset().fadeIn(duracion).play();
+    });
+}
+
+// Activa la animación de salto para el bot
+function activarSaltoBot() {
+    if (!botMixer || !botAnimaciones.saltar || botAnimaciones.saltar.length === 0) return;
+    if (botSaltando) return;
+
+    botSaltando = true;
+    const duracion = 0.15;
+
+    botAnimsBase.forEach(a => a.setEffectiveWeight(0.2));
+
+    botAnimaciones.saltar.forEach(a => {
+        a.stop();
+        a.reset();
+        a.setEffectiveWeight(1.0);
+        a.play();
+    });
+
+    const duracionAnim = botAnimaciones.saltar[0]?.getClip()?.duration || 1.0;
+    setTimeout(() => {
+        botSaltando = false;
+        botAnimsBase.forEach(a => a.setEffectiveWeight(1.0));
+        botAnimaciones.saltar.forEach(a => a.fadeOut(0.3));
+    }, duracionAnim * 1000 - 200);
 }

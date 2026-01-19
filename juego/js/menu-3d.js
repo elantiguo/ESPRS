@@ -18,11 +18,17 @@ function initVisoresPersonajes() {
         vCamara.position.set(0, 0.9, 4.0);
         vCamara.lookAt(0, 0.5, 0);
 
-        // Renderizador
-        const vRender = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        // OPT-12: Renderizador para visores de personajes
+        // Mejor calidad que el juego porque son modelos pequeños y estáticos
+        const vRender = new THREE.WebGLRenderer({
+            alpha: true,
+            antialias: true, // Antialiasing activado para personajes nítidos
+            powerPreference: 'low-power' // Ahorrar batería en el menú
+        });
         vRender.setSize(contenedor.clientWidth, contenedor.clientHeight);
         vRender.setClearColor(0x000000, 0); // Transparente
-        vRender.setPixelRatio(window.devicePixelRatio);
+        // Pixel ratio moderado en móviles (1.5) para buen balance calidad/rendimiento
+        vRender.setPixelRatio(Math.min(window.devicePixelRatio, esDispositivoTactil ? 1.5 : 2));
         contenedor.appendChild(vRender.domElement);
 
         // Iluminación futurista
@@ -57,8 +63,8 @@ function initVisoresPersonajes() {
             // Escalas individuales por personaje (ajustadas según el tamaño de cada modelo)
             const escalasPorPersonaje = {
                 'agente': 0.0005,
-                'cill': 0.0008,
-                'rufy': 0.0008,
+                'cill': 0.0005,
+                'rufy': 0.0005,
                 'ivan': 0.0005,
                 'nero': 0.0005,     // Nero es más grande, reducir escala
                 'drina': 0.0005,    // Drina es más grande, reducir escala
@@ -132,9 +138,21 @@ function initVisoresPersonajes() {
     });
 }
 
-function animarVisores() {
+// OPT-13: Variables para throttle de animación en móviles
+var _menuLastFrameTime = 0;
+var _menuFrameInterval = esDispositivoTactil ? 50 : 16; // 20 FPS en móvil, ~60 FPS en PC
+
+function animarVisores(tiempo) {
     requestAnimationFrame(animarVisores);
-    const delta = 0.016; // Aprox 60fps
+
+    // OPT-13: Throttle de animación en móviles para ahorrar batería
+    if (esDispositivoTactil) {
+        const elapsed = tiempo - _menuLastFrameTime;
+        if (elapsed < _menuFrameInterval) return;
+    }
+    _menuLastFrameTime = tiempo;
+
+    const delta = 0.016; // Aprox 60fps base
 
     Object.keys(visoresMenu).forEach(id => {
         const v = visoresMenu[id];
